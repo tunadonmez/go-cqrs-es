@@ -1,0 +1,29 @@
+# Binaries
+account-cmd/account-cmd
+account-query/account-query
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace cache
+go.work.sum
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+/.idea/

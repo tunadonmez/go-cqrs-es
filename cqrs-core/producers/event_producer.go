@@ -1,0 +1,8 @@
+package producers
+
+import "github.com/techbank/cqrs-core/events"
+
+// EventProducer publishes domain events to a message broker.
+type EventProducer interface {
+	Produce(topic string, event events.BaseEvent) error
+}
