@@ -11,8 +11,8 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Port:           getEnv("PORT", "5000"),
-		MongoURI:       getEnv("SPRING_DATA_MONGODB_URI", "mongodb://root:root@localhost:27017/bankAccount?authSource=admin"),
-		KafkaBootstrap: getEnv("SPRING_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+		MongoURI:       getEnv("MONGODB_URI", "mongodb://root:root@localhost:27017/bankAccount?authSource=admin"),
+		KafkaBootstrap: getEnv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
 	}
 }
 

@@ -6,9 +6,8 @@ import (
 	"time"
 
 	corevents "github.com/techbank/cqrs-core/events"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 const collection = "eventStore"
@@ -24,18 +23,18 @@ func NewEventStoreRepository(db *mongo.Database) *EventStoreRepository {
 
 // rawEventDoc is the raw BSON shape stored in MongoDB.
 type rawEventDoc struct {
-	ID                  primitive.ObjectID `bson:"_id,omitempty"`
-	TimeStamp           time.Time          `bson:"timeStamp"`
-	AggregateIdentifier string             `bson:"aggregateIdentifier"`
-	AggregateType       string             `bson:"aggregateType"`
-	Version             int                `bson:"version"`
-	EventType           string             `bson:"eventType"`
-	EventData           bson.Raw           `bson:"eventData"`
+	ID                  bson.ObjectID `bson:"_id,omitempty"`
+	TimeStamp           time.Time     `bson:"timeStamp"`
+	AggregateIdentifier string        `bson:"aggregateIdentifier"`
+	AggregateType       string        `bson:"aggregateType"`
+	Version             int           `bson:"version"`
+	EventType           string        `bson:"eventType"`
+	EventData           bson.Raw      `bson:"eventData"`
 }
 
 // EventModelDoc is the application-level representation with a deserialized event.
 type EventModelDoc struct {
-	ID                  primitive.ObjectID
+	ID                  bson.ObjectID
 	TimeStamp           time.Time
 	AggregateIdentifier string
 	AggregateType       string
@@ -109,7 +108,7 @@ func (r *EventStoreRepository) Save(model *EventModelDoc) (*EventModelDoc, error
 	if err != nil {
 		return nil, err
 	}
-	if oid, ok := res.InsertedID.(primitive.ObjectID); ok {
+	if oid, ok := res.InsertedID.(bson.ObjectID); ok {
 		model.ID = oid
 	}
 	return model, nil

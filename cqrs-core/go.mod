@@ -1,5 +1,5 @@
 module github.com/techbank/cqrs-core
 
-go 1.23
+go 1.26.1
 
-require go.mongodb.org/mongo-driver v1.17.1
+require go.mongodb.org/mongo-driver/v2 v2.5.0

@@ -1,4 +1,4 @@
-# Bank Account Microservices — CQRS & Event Sourcing in Go
+# Bank Account Microservices — CQRS & Event Sourcing
 
 A bank account system built with **CQRS (Command Query Responsibility Segregation)** and **Event Sourcing** patterns using Go microservices.
 
@@ -6,12 +6,14 @@ A bank account system built with **CQRS (Command Query Responsibility Segregatio
 
 **Command flow:** HTTP → Controller → CommandDispatcher → CommandHandler → AccountAggregate → EventStore (MongoDB) → Kafka
 
-**Query flow:** Kafka → EventConsumer → EventHandler → MySQL read model → QueryDispatcher → QueryHandler → HTTP response
+**Read model projection:** Kafka → EventConsumer → EventHandler → MySQL read model
+
+**Query flow:** HTTP → Controller → QueryDispatcher → QueryHandler → MySQL read model → HTTP response
 
 ### Project Structure
 
 ```
-go.work (Go 1.23)
+go.work (Go 1.26.1)
 ├── cqrs-core/         Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
 ├── account-common/    Shared domain events and DTOs
 ├── account-cmd/       Write service — MongoDB + Kafka producer
@@ -22,7 +24,7 @@ go.work (Go 1.23)
 
 | Component   | Technology          | Purpose                      |
 |-------------|---------------------|------------------------------|
-| Language    | Go 1.23             | All services                 |
+| Language    | Go 1.26.1           | All services                 |
 | Event store | MongoDB             | Immutable event log          |
 | Read model  | MySQL (GORM)        | Queryable account projections|
 | Messaging   | Apache Kafka (KRaft)| Event distribution           |
@@ -32,26 +34,16 @@ go.work (Go 1.23)
 
 ### Prerequisites
 
-- [Docker](https://www.docker.com/) and Docker Compose
-- Go 1.23+ (for local development)
-
-### Run with Docker
-
-```bash
-docker-compose up
-```
-
-This starts MongoDB, MySQL, Kafka, and both services.
+- Go 1.26.1+
+- MongoDB, MySQL, and Apache Kafka running locally (or via containers)
 
 ### Run Locally
-
-Ensure MongoDB, MySQL, and Kafka are running, then:
 
 ```bash
 # Command service
 PORT=5000 \
-SPRING_DATA_MONGODB_URI="mongodb://root:root@localhost:27017/bankAccount?authSource=admin" \
-SPRING_KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
+MONGODB_URI="mongodb://root:root@localhost:27017/bankAccount?authSource=admin" \
+KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
 go run ./account-cmd
 
 # Query service
