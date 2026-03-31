@@ -1,5 +1,11 @@
 package commands
 
+// IdentifiedCommand exposes the common command identity contract.
+type IdentifiedCommand interface {
+	GetID() string
+	SetID(id string)
+}
+
 // BaseCommand is the base for all commands.
 type BaseCommand struct {
 	ID string `json:"id"`

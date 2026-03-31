@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/techbank/cqrs-core/events"
+	"github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 )
 
 // AggregateRoot is the base for all aggregates.

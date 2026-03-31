@@ -1,8 +1,7 @@
 package infrastructure
 
 import (
-	"github.com/techbank/account-query/domain"
-	coredomain "github.com/techbank/cqrs-core/domain"
+	"github.com/tunadonmez/go-cqrs-es/account-query/domain"
 	"gorm.io/gorm"
 )
 
@@ -33,38 +32,6 @@ func (r *AccountRepository) FindAll() ([]*domain.Account, error) {
 		return nil, err
 	}
 	return accounts, nil
-}
-
-func (r *AccountRepository) FindByAccountHolder(holder string) (*domain.Account, error) {
-	var account domain.Account
-	if err := r.db.First(&account, "account_holder = ?", holder).Error; err != nil {
-		return nil, err
-	}
-	return &account, nil
-}
-
-func (r *AccountRepository) FindByBalanceGreaterThan(balance float64) ([]coredomain.BaseEntity, error) {
-	var accounts []*domain.Account
-	if err := r.db.Where("balance > ?", balance).Find(&accounts).Error; err != nil {
-		return nil, err
-	}
-	result := make([]coredomain.BaseEntity, len(accounts))
-	for i, a := range accounts {
-		result[i] = a
-	}
-	return result, nil
-}
-
-func (r *AccountRepository) FindByBalanceLessThan(balance float64) ([]coredomain.BaseEntity, error) {
-	var accounts []*domain.Account
-	if err := r.db.Where("balance < ?", balance).Find(&accounts).Error; err != nil {
-		return nil, err
-	}
-	result := make([]coredomain.BaseEntity, len(accounts))
-	for i, a := range accounts {
-		result[i] = a
-	}
-	return result, nil
 }
 
 func (r *AccountRepository) DeleteByID(id string) error {

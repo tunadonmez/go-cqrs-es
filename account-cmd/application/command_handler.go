@@ -1,17 +1,17 @@
 package application
 
 import (
-	"github.com/techbank/account-cmd/api/commands"
-	"github.com/techbank/account-cmd/domain"
-	"github.com/techbank/account-cmd/infrastructure"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/api/commands"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/domain"
+	corehandlers "github.com/tunadonmez/go-cqrs-es/cqrs-core/handlers"
 )
 
 // CommandHandler processes all account commands.
 type CommandHandler struct {
-	eventSourcingHandler *infrastructure.AccountEventSourcingHandler
+	eventSourcingHandler corehandlers.EventSourcingHandler[domain.AccountAggregate]
 }
 
-func NewCommandHandler(esh *infrastructure.AccountEventSourcingHandler) *CommandHandler {
+func NewCommandHandler(esh corehandlers.EventSourcingHandler[domain.AccountAggregate]) *CommandHandler {
 	return &CommandHandler{eventSourcingHandler: esh}
 }
 

@@ -1,9 +1,7 @@
-module github.com/techbank/account-common
+module github.com/tunadonmez/go-cqrs-es/account-common
 
 go 1.26.1
 
-require github.com/techbank/cqrs-core v0.0.0
+require github.com/tunadonmez/go-cqrs-es/cqrs-core v0.0.0
 
-require go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
-
-replace github.com/techbank/cqrs-core => ../cqrs-core
+replace github.com/tunadonmez/go-cqrs-es/cqrs-core => ../cqrs-core

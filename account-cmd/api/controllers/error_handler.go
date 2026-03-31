@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/techbank/account-cmd/infrastructure"
-	"github.com/techbank/account-common/dto"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/infrastructure"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
 )
 
 func handleError(c *gin.Context, err error) {

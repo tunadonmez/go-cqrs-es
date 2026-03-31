@@ -3,7 +3,7 @@ package domain
 import (
 	"time"
 
-	"github.com/techbank/account-common/dto"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
 )
 
 // Account is the MySQL read-model entity.

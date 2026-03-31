@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/techbank/cqrs-core/domain"
-	"github.com/techbank/cqrs-core/queries"
+	"github.com/tunadonmez/go-cqrs-es/cqrs-core/domain"
+	"github.com/tunadonmez/go-cqrs-es/cqrs-core/queries"
 )
 
 // QueryHandlerFunc handles a query and returns a slice of entities.

@@ -1,12 +1,12 @@
-module github.com/techbank/account-query
+module github.com/tunadonmez/go-cqrs-es/account-query
 
 go 1.26.1
 
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/segmentio/kafka-go v0.4.47
-	github.com/techbank/account-common v0.0.0
-	github.com/techbank/cqrs-core v0.0.0
+	github.com/tunadonmez/go-cqrs-es/account-common v0.0.0
+	github.com/tunadonmez/go-cqrs-es/cqrs-core v0.0.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.11
 )
@@ -23,6 +23,7 @@ require (
 	github.com/go-playground/validator/v10 v10.20.0 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -36,7 +37,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
+	github.com/xdg-go/scram v1.2.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
@@ -47,6 +48,6 @@ require (
 )
 
 replace (
-	github.com/techbank/account-common => ../account-common
-	github.com/techbank/cqrs-core => ../cqrs-core
+	github.com/tunadonmez/go-cqrs-es/account-common => ../account-common
+	github.com/tunadonmez/go-cqrs-es/cqrs-core => ../cqrs-core
 )

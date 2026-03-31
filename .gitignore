@@ -11,8 +11,7 @@ account-query/account-query
 *.test
 *.out
 
-# Go workspace cache
-go.work.sum
+vendor/
 
 # Environment files
 .env

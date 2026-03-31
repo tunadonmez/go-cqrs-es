@@ -1,6 +1,6 @@
 package infrastructure
 
-import "github.com/techbank/cqrs-core/events"
+import "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 
 // EventStore defines persistence for domain events.
 type EventStore interface {

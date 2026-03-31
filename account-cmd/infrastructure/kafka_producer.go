@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
-	corevents "github.com/techbank/cqrs-core/events"
+	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 )
 
 // KafkaMessage is the envelope sent over Kafka.

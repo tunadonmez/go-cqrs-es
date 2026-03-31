@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/techbank/account-cmd/api/commands"
-	"github.com/techbank/account-cmd/application"
-	"github.com/techbank/account-common/dto"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/api/commands"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
+	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
 )
 
 type OpenAccountResponse struct {
@@ -16,21 +16,21 @@ type OpenAccountResponse struct {
 }
 
 // OpenAccountHandler handles POST /api/v1/openBankAccount.
-func OpenAccountHandler(handler *application.CommandHandler) gin.HandlerFunc {
+func OpenAccountHandler(dispatcher *coreinfra.CommandDispatcher) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var cmd commands.OpenAccountCommand
 		if err := c.ShouldBindJSON(&cmd); err != nil {
 			c.JSON(http.StatusBadRequest, dto.BaseResponse{Message: err.Error()})
 			return
 		}
-		cmd.ID = uuid.New().String()
-		if err := handler.HandleOpenAccount(&cmd); err != nil {
+		cmd.SetID(uuid.New().String())
+		if err := dispatcher.Send(&cmd); err != nil {
 			handleError(c, err)
 			return
 		}
 		c.JSON(http.StatusCreated, OpenAccountResponse{
 			BaseResponse: dto.BaseResponse{Message: "Bank account creation request completed successfully!"},
-			ID:           cmd.ID,
+			ID:           cmd.GetID(),
 		})
 	}
 }

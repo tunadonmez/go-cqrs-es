@@ -1,15 +1,17 @@
 package infrastructure
 
 import (
-	"github.com/techbank/account-cmd/domain"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/domain"
+	corehandlers "github.com/tunadonmez/go-cqrs-es/cqrs-core/handlers"
+	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
 )
 
 // AccountEventSourcingHandler rehydrates AccountAggregates from the event store.
 type AccountEventSourcingHandler struct {
-	eventStore *AccountEventStore
+	eventStore coreinfra.EventStore
 }
 
-func NewAccountEventSourcingHandler(es *AccountEventStore) *AccountEventSourcingHandler {
+func NewAccountEventSourcingHandler(es coreinfra.EventStore) *AccountEventSourcingHandler {
 	return &AccountEventSourcingHandler{eventStore: es}
 }
 
@@ -40,3 +42,5 @@ func (h *AccountEventSourcingHandler) GetByID(id string) (*domain.AccountAggrega
 	}
 	return aggregate, nil
 }
+
+var _ corehandlers.EventSourcingHandler[domain.AccountAggregate] = (*AccountEventSourcingHandler)(nil)

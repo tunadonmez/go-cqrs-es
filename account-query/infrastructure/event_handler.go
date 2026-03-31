@@ -1,8 +1,8 @@
 package infrastructure
 
 import (
-	commonevents "github.com/techbank/account-common/events"
-	"github.com/techbank/account-query/domain"
+	commonevents "github.com/tunadonmez/go-cqrs-es/account-common/events"
+	"github.com/tunadonmez/go-cqrs-es/account-query/domain"
 )
 
 // AccountEventHandler projects domain events onto the MySQL read model.

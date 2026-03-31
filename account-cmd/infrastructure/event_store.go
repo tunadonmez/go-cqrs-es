@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/techbank/account-cmd/domain"
-	corevents "github.com/techbank/cqrs-core/events"
-	"github.com/techbank/cqrs-core/producers"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/domain"
+	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
+	"github.com/tunadonmez/go-cqrs-es/cqrs-core/producers"
 )
 
 const EventsTopic = "BankAccountEvents"

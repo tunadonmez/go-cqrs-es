@@ -3,8 +3,8 @@ package events
 import (
 	"time"
 
-	"github.com/techbank/account-common/dto"
-	corevents "github.com/techbank/cqrs-core/events"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
+	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 )
 
 func init() {

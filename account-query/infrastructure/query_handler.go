@@ -1,8 +1,8 @@
 package infrastructure
 
 import (
-	"github.com/techbank/account-query/api/queries"
-	coredomain "github.com/techbank/cqrs-core/domain"
+	"github.com/tunadonmez/go-cqrs-es/account-query/api/queries"
+	coredomain "github.com/tunadonmez/go-cqrs-es/cqrs-core/domain"
 )
 
 // AccountQueryHandler handles all account queries against the read model.
@@ -32,19 +32,4 @@ func (h *AccountQueryHandler) HandleFindByID(q queries.FindAccountByIdQuery) ([]
 		return nil, err
 	}
 	return []coredomain.BaseEntity{account}, nil
-}
-
-func (h *AccountQueryHandler) HandleFindByHolder(q queries.FindAccountByHolderQuery) ([]coredomain.BaseEntity, error) {
-	account, err := h.repository.FindByAccountHolder(q.AccountHolder)
-	if err != nil {
-		return nil, err
-	}
-	return []coredomain.BaseEntity{account}, nil
-}
-
-func (h *AccountQueryHandler) HandleFindByBalance(q queries.FindAccountWithBalanceQuery) ([]coredomain.BaseEntity, error) {
-	if q.EqualityType == queries.GreaterThan {
-		return h.repository.FindByBalanceGreaterThan(q.Balance)
-	}
-	return h.repository.FindByBalanceLessThan(q.Balance)
 }

@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/segmentio/kafka-go"
-	commonevents "github.com/techbank/account-common/events"
+	commonevents "github.com/tunadonmez/go-cqrs-es/account-common/events"
 )
 
 const eventsTopic = "BankAccountEvents"

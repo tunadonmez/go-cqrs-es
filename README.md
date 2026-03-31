@@ -13,7 +13,7 @@ A bank account system built with **CQRS (Command Query Responsibility Segregatio
 ### Project Structure
 
 ```
-go.work (Go 1.26.1)
+go-cqrs-es/
 ├── cqrs-core/         Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
 ├── account-common/    Shared domain events and DTOs
 ├── account-cmd/       Write service — MongoDB + Kafka producer
@@ -41,26 +41,24 @@ go.work (Go 1.26.1)
 
 ```bash
 # Command service
+cd account-cmd
 PORT=5000 \
 MONGODB_URI="mongodb://root:root@localhost:27017/bankAccount?authSource=admin" \
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
-go run ./account-cmd
+go run .
 
 # Query service
+cd ../account-query
 PORT=5001 \
 MYSQL_DSN="root:techbankRootPsw@tcp(localhost:3306)/bankAccount?charset=utf8mb4&parseTime=True&loc=Local" \
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
 KAFKA_GROUP_ID="bankaccConsumer" \
-go run ./account-query
+go run .
 ```
 
 ### Build
 
 ```bash
-# All modules
-go build ./...
-
-# Individual services
 cd account-cmd && go build -o account-cmd .
 cd account-query && go build -o account-query .
 ```
@@ -68,7 +66,10 @@ cd account-query && go build -o account-query .
 ### Test
 
 ```bash
-go test ./...
+cd cqrs-core && go test ./...
+cd ../account-common && go test ./...
+cd ../account-cmd && go test ./...
+cd ../account-query && go test ./...
 ```
 
 ## API Reference

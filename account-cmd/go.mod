@@ -1,4 +1,4 @@
-module github.com/techbank/account-cmd
+module github.com/tunadonmez/go-cqrs-es/account-cmd
 
 go 1.26.1
 
@@ -6,8 +6,8 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/kafka-go v0.4.47
-	github.com/techbank/account-common v0.0.0
-	github.com/techbank/cqrs-core v0.0.0
+	github.com/tunadonmez/go-cqrs-es/account-common v0.0.0
+	github.com/tunadonmez/go-cqrs-es/cqrs-core v0.0.0
 	go.mongodb.org/mongo-driver/v2 v2.5.0
 )
 
@@ -48,6 +48,6 @@ require (
 )
 
 replace (
-	github.com/techbank/account-common => ../account-common
-	github.com/techbank/cqrs-core => ../cqrs-core
+	github.com/tunadonmez/go-cqrs-es/account-common => ../account-common
+	github.com/tunadonmez/go-cqrs-es/cqrs-core => ../cqrs-core
 )

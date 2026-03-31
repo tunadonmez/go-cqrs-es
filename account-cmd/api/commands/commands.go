@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/techbank/account-common/dto"
-	"github.com/techbank/cqrs-core/commands"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
+	"github.com/tunadonmez/go-cqrs-es/cqrs-core/commands"
 )
 
 type OpenAccountCommand struct {

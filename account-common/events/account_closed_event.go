@@ -1,6 +1,6 @@
 package events
 
-import corevents "github.com/techbank/cqrs-core/events"
+import corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 
 func init() {
 	corevents.Register("AccountClosedEvent", func() corevents.BaseEvent { return &AccountClosedEvent{} })

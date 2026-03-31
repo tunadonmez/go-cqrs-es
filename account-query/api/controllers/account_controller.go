@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/techbank/account-common/dto"
-	"github.com/techbank/account-query/api/queries"
-	"github.com/techbank/account-query/domain"
-	"github.com/techbank/account-query/infrastructure"
-	coredomain "github.com/techbank/cqrs-core/domain"
+	"github.com/tunadonmez/go-cqrs-es/account-common/dto"
+	"github.com/tunadonmez/go-cqrs-es/account-query/api/queries"
+	"github.com/tunadonmez/go-cqrs-es/account-query/domain"
+	coredomain "github.com/tunadonmez/go-cqrs-es/cqrs-core/domain"
+	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
 )
 
 // AccountResponse wraps a list of accounts in the standard response envelope.
@@ -19,14 +19,14 @@ type AccountResponse struct {
 }
 
 // RegisterRoutes wires account query handlers onto the given router group.
-func RegisterRoutes(r *gin.RouterGroup, qh *infrastructure.AccountQueryHandler) {
-	r.GET("/accounts", getAllAccounts(qh))
-	r.GET("/accounts/:id", getAccountByID(qh))
+func RegisterRoutes(r *gin.RouterGroup, dispatcher *coreinfra.QueryDispatcher) {
+	r.GET("/accounts", getAllAccounts(dispatcher))
+	r.GET("/accounts/:id", getAccountByID(dispatcher))
 }
 
-func getAllAccounts(qh *infrastructure.AccountQueryHandler) gin.HandlerFunc {
+func getAllAccounts(dispatcher *coreinfra.QueryDispatcher) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		entities, err := qh.HandleFindAll(queries.FindAllAccountsQuery{})
+		entities, err := dispatcher.Send(queries.FindAllAccountsQuery{})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, AccountResponse{
 				BaseResponse: dto.BaseResponse{Message: "Failed to complete get all accounts request!"},
@@ -45,10 +45,10 @@ func getAllAccounts(qh *infrastructure.AccountQueryHandler) gin.HandlerFunc {
 	}
 }
 
-func getAccountByID(qh *infrastructure.AccountQueryHandler) gin.HandlerFunc {
+func getAccountByID(dispatcher *coreinfra.QueryDispatcher) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		entities, err := qh.HandleFindByID(queries.FindAccountByIdQuery{ID: id})
+		entities, err := dispatcher.Send(queries.FindAccountByIdQuery{ID: id})
 		if err != nil || len(entities) == 0 {
 			c.Status(http.StatusNoContent)
 			return

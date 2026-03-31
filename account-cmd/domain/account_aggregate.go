@@ -4,22 +4,22 @@ import (
 	"errors"
 	"time"
 
-	"github.com/techbank/account-cmd/api/commands"
-	commonevents "github.com/techbank/account-common/events"
-	"github.com/techbank/cqrs-core/domain"
+	"github.com/tunadonmez/go-cqrs-es/account-cmd/api/commands"
+	commonevents "github.com/tunadonmez/go-cqrs-es/account-common/events"
+	coredomain "github.com/tunadonmez/go-cqrs-es/cqrs-core/domain"
 )
 
 // AccountAggregate is the write-side aggregate for bank accounts.
 type AccountAggregate struct {
-	domain.AggregateRoot
+	coredomain.AggregateRoot
 	active  bool
 	balance float64
 }
 
 func NewAccountAggregate() *AccountAggregate {
-	a := &AccountAggregate{}
-	a.Version = -1
-	return a
+	return &AccountAggregate{
+		AggregateRoot: *coredomain.NewAggregateRoot(),
+	}
 }
 
 func NewAccountAggregateFromCommand(cmd *commands.OpenAccountCommand) (*AccountAggregate, error) {
