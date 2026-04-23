@@ -48,8 +48,14 @@ func main() {
 	}
 	slog.Info("Connected to PostgreSQL")
 
-	// Auto-migrate the read model and the processed-events inbox.
-	if err := db.AutoMigrate(&domain.Wallet{}, &domain.Transaction{}, &infrastructure.ProcessedEvent{}); err != nil {
+	// Auto-migrate the read model, the processed-events inbox, and the
+	// operational dead-letter table used by the live Kafka consumer.
+	if err := db.AutoMigrate(
+		&domain.Wallet{},
+		&domain.Transaction{},
+		&infrastructure.ProcessedEvent{},
+		&infrastructure.DeadLetterEvent{},
+	); err != nil {
 		slog.Error("AutoMigrate error", "error", err)
 		os.Exit(1)
 	}
@@ -57,6 +63,7 @@ func main() {
 	// Wire up dependencies shared by both modes.
 	repo := infrastructure.NewWalletRepository(db)
 	eventHandler := infrastructure.NewWalletEventHandler(repo)
+	deadLetters := infrastructure.NewDeadLetterRepository(db)
 
 	if *replayFlag {
 		runReplay(cfg, db, eventHandler, *aggregateFlag)
@@ -77,7 +84,7 @@ func main() {
 	})
 
 	// Start Kafka consumers in background
-	consumer := infrastructure.NewWalletEventConsumer(cfg.KafkaBootstrap, cfg.KafkaGroupID, eventHandler)
+	consumer := infrastructure.NewWalletEventConsumer(cfg.KafkaBootstrap, cfg.KafkaGroupID, eventHandler, deadLetters)
 	consumer.Start(context.Background())
 
 	// Set up HTTP routes

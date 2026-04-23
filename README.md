@@ -78,6 +78,45 @@ The projection pipeline is safe under at-least-once delivery.
 - Projections run inside a single DB transaction that first `INSERT … ON CONFLICT DO NOTHING` into `processed_events`. If the insert affects zero rows, the event is a duplicate and the projection body is skipped entirely.
 - Projection writes and inbox writes commit together, so a crash between the two is impossible.
 
+### Retry / Dead-Letter Handling (read side)
+
+The live Kafka consumer now uses an explicit fetch/process/commit flow instead of relying on implicit offset handling.
+
+- Kafka offsets are committed **only after** a message is either:
+  - projected successfully, or
+  - persisted to the dead-letter table
+- Projection failures are retried locally up to **3 attempts** with a short fixed backoff.
+- Permanent consumer failures such as malformed envelopes, unknown event types, or invalid event payloads are **not** retried repeatedly; they are dead-lettered immediately.
+- If the message still fails after the retry budget is exhausted, it is written to PostgreSQL `dead_letter_events` and then the Kafka offset is committed so the consumer can keep moving.
+
+This keeps read-model writes safe:
+
+- a failed event never reaches `processed_events`
+- a failed event never partially mutates the read model because projection work still runs inside `applyIdempotent`
+- a successfully processed redelivery remains safe because idempotency is unchanged
+
+#### Inspecting failed events
+
+Dead-lettered messages are stored in PostgreSQL in `dead_letter_events`. Each row includes:
+
+- `event_id`, `event_type`, `aggregate_id`
+- Kafka `topic`, `partition`, `offset`, `consumer_group`
+- `failure_kind` (`permanent` or `retries_exhausted`)
+- `retry_attempts`
+- `last_error`
+- the original Kafka payload
+- failure timestamps
+
+Example inspection query:
+
+```sql
+SELECT dead_letter_key, event_id, event_type, aggregate_id, failure_kind,
+       retry_attempts, last_error, dead_lettered_at
+FROM dead_letter_events
+ORDER BY dead_lettered_at DESC
+LIMIT 20;
+```
+
 ### Read-Model Rebuild / Replay
 
 The read model can be rebuilt at any time from the event store, independent of Kafka.
@@ -105,6 +144,8 @@ go run . --replay --aggregate=<wallet-id>
 ```
 
 `--replay` is a one-shot mode: the binary performs the rebuild, logs progress, and exits. Kafka is **not** touched. Running replay multiple times is safe — each run resets the target scope (full or single aggregate) before replaying, so projections always start from a clean slate and idempotent `applyIdempotent` records match.
+
+Replay does **not** clear `dead_letter_events`; rebuilds restore the read model, while dead-letter rows remain available for diagnosis.
 
 Example log output:
 
@@ -143,7 +184,7 @@ Important flows currently covered:
 - command received, handling started, handled, failed
 - event persisted / persistence failed
 - outbox publish attempt / published / failed
-- Kafka message consumed / decode failure / handler failure
+- Kafka message consumed / retry / dead-letter / commit failure
 - projection applied / duplicate skipped / projection failed
 - replay started / progress / completed / failed
 
@@ -160,9 +201,10 @@ The snapshot includes the original counters plus a few extra operational counter
 - `commands_received`, `commands_succeeded`, `command_failures`
 - `events_persisted`, `event_persist_failures`
 - `outbox_publish_attempts`, `produced_events`, `produce_failures`
-- `kafka_messages_consumed`, `kafka_message_failures`
+- `kafka_messages_consumed`, `kafka_message_failures`, `kafka_retry_attempts`
 - `projection_attempts`, `processed_events`, `skipped_events`, `failed_events`
 - `replay_runs`, `replay_failures`, `replay_events_processed`
+- `dead_lettered_events`, `dead_letter_save_failures`
 
 ### Replay Observability
 The replay process logs:

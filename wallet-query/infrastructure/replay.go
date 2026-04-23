@@ -116,6 +116,9 @@ func (r *Replayer) dispatch(ev ReplayEvent) error {
 // also cleared in scope so replay is not short-circuited as "already
 // processed" by applyIdempotent.
 //
+// Operational tables such as dead_letter_events are deliberately left
+// untouched: replay rebuilds the read model, not the failure history.
+//
 // Scoping:
 //   - Full replay: truncate wallets, transactions, processed_events.
 //   - Aggregate-scoped replay: delete only rows belonging to that aggregate.
