@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
+	"os"
 	"reflect"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/tunadonmez/go-cqrs-es/wallet-cmd/config"
 	"github.com/tunadonmez/go-cqrs-es/wallet-cmd/infrastructure"
 	_ "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
+	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
 
 	corecommands "github.com/tunadonmez/go-cqrs-es/cqrs-core/commands"
 	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
@@ -23,6 +25,10 @@ import (
 )
 
 func main() {
+	// Initialize slog
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	cfg := config.Load()
 
 	// Connect to MongoDB
@@ -31,12 +37,14 @@ func main() {
 
 	client, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
 	if err != nil {
-		log.Fatalf("MongoDB connect error: %v", err)
+		slog.Error("MongoDB connect error", "error", err)
+		os.Exit(1)
 	}
 	if err := client.Ping(ctx, nil); err != nil {
-		log.Fatalf("MongoDB ping error: %v", err)
+		slog.Error("MongoDB ping error", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Connected to MongoDB")
+	slog.Info("Connected to MongoDB")
 
 	db := client.Database("walletLedger")
 
@@ -57,6 +65,12 @@ func main() {
 	eventSourcingHandler := infrastructure.NewWalletEventSourcingHandler(eventStore)
 	cmdHandler := application.NewCommandHandler(eventSourcingHandler)
 	cmdDispatcher := coreinfra.NewCommandDispatcher()
+	// Logging & Metrics middleware
+	cmdDispatcher.Use(func(cmd interface{}) error {
+		observability.DefaultMetrics.CommandsReceived.Add(1)
+		slog.Info("Command received", "type", reflect.TypeOf(cmd).Elem().Name())
+		return nil
+	})
 	cmdDispatcher.Use(func(cmd interface{}) error {
 		identified, ok := cmd.(corecommands.IdentifiedCommand)
 		if !ok {
@@ -82,6 +96,24 @@ func main() {
 
 	// Set up HTTP routes
 	r := gin.Default()
+
+	// Health check endpoints
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "UP"})
+	})
+	r.GET("/ready", func(c *gin.Context) {
+		// Basic check: can we ping Mongo?
+		if err := client.Ping(context.Background(), nil); err != nil {
+			c.JSON(503, gin.H{"status": "DOWN", "reason": "mongodb unavailable"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "READY"})
+	})
+
+	r.GET("/metrics", func(c *gin.Context) {
+		c.JSON(200, observability.DefaultMetrics.Snapshot())
+	})
+
 	v1 := r.Group("/api/v1")
 	{
 		v1.POST("/wallets", controllers.CreateWalletHandler(cmdDispatcher))
@@ -90,8 +122,9 @@ func main() {
 		v1.POST("/wallets/:id/transfer", controllers.TransferFundsHandler(cmdDispatcher))
 	}
 
-	log.Printf("Command service starting on port %s", cfg.Port)
+	slog.Info("Command service starting", "port", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("Server error", "error", err)
+		os.Exit(1)
 	}
 }

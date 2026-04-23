@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
@@ -65,8 +66,18 @@ func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseE
 		}
 
 		if _, err := s.repository.Save(model); err != nil {
+			slog.Error("Failed to save event to store",
+				"aggregateId", aggregateID,
+				"eventId", event.GetEventID(),
+				"type", event.EventTypeName(),
+				"error", err)
 			return err
 		}
+		slog.Info("Event persisted to event store",
+			"aggregateId", aggregateID,
+			"eventId", event.GetEventID(),
+			"type", event.EventTypeName(),
+			"version", version)
 	}
 	return nil
 }

@@ -57,6 +57,7 @@ go-cqrs-es/
 | Read model  | PostgreSQL (GORM)    | Wallet balances, ledger, inbox           |
 | Messaging   | Apache Kafka (KRaft) | Event distribution                       |
 | HTTP        | Gin                  | REST API routing                         |
+| Observability| log/slog, Health, Metrics | Structured logging, health checks, simple metrics |
 
 ## Reliability Improvements
 
@@ -77,6 +78,44 @@ The projection pipeline is safe under at-least-once delivery.
 - Projections run inside a single DB transaction that first `INSERT … ON CONFLICT DO NOTHING` into `processed_events`. If the insert affects zero rows, the event is a duplicate and the projection body is skipped entirely.
 - Projection writes and inbox writes commit together, so a crash between the two is impossible.
 
+### Read-Model Rebuild / Replay
+
+The read model can be rebuilt at any time from the event store, independent of Kafka.
+
+**What it is.** A one-shot CLI mode on `wallet-query` that connects directly to MongoDB (the source of truth), truncates the read-model tables (and the `processed_events` inbox), and streams every event through the **same** `WalletEventHandler` methods the live Kafka consumer uses. There is only one projection path in the codebase; replay just feeds it from a different source.
+
+**Why it exists.**
+
+- Projection bug fix — ship corrected handler code, then rebuild the read model from the truth.
+- Schema change — add/remove columns, then rebuild to backfill.
+- Disaster recovery — if Postgres is lost, rebuilding from the event store restores the ledger.
+- Onboarding a new read model — spin up a fresh Postgres and replay history into it.
+
+**How to run it.**
+
+```bash
+# Full rebuild (truncates wallets, transactions, processed_events)
+cd wallet-query
+POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger port=5432 sslmode=disable TimeZone=UTC" \
+MONGODB_URI="mongodb://root:root@localhost:27017/walletLedger?authSource=admin" \
+go run . --replay
+
+# Rebuild for a single aggregate only
+go run . --replay --aggregate=<wallet-id>
+```
+
+`--replay` is a one-shot mode: the binary performs the rebuild, logs progress, and exits. Kafka is **not** touched. Running replay multiple times is safe — each run resets the target scope (full or single aggregate) before replaying, so projections always start from a clean slate and idempotent `applyIdempotent` records match.
+
+Example log output:
+
+```
+replay: START scope=ALL total_events=12345
+replay: read model reset (scope=ALL)
+replay: progress 500/12345 events
+...
+replay: DONE scope=ALL events=12345 duration=4.812s
+```
+
 ### Stable Event Identifiers
 
 Every domain event carries a per-event `EventID` (128-bit random, populated on `RaiseEvent` if missing). The identifier is propagated through:
@@ -86,6 +125,34 @@ Every domain event carries a per-event `EventID` (128-bit random, populated on `
 3. The projection inbox (`processed_events.event_id`).
 
 Commands keep their own identifier contract (`IdentifiedCommand`) and remain unchanged.
+
+## Observability
+
+The system includes built-in observability features to monitor health, performance, and internal state.
+
+### Structured Logging
+All services use structured JSON logging via `log/slog` from the Go standard library. Logs include critical identifiers like `aggregateId`, `eventId`, and `type` to allow for easy tracing of events through the system.
+
+### Health & Readiness Endpoints
+Both `wallet-cmd` and `wallet-query` expose health and readiness checks:
+- `GET /health`: Returns `200 OK` with `{"status": "UP"}` if the service is running.
+- `GET /ready`: Returns `200 OK` if the service is connected to its dependencies (MongoDB for `wallet-cmd`, PostgreSQL for `wallet-query`).
+
+### Lightweight Metrics
+A simple metrics system tracks internal counts:
+- `GET /metrics`: Returns JSON containing:
+    - `commands_received`: Total commands handled by the write side.
+    - `produced_events`: Total events successfully published to Kafka.
+    - `produce_failures`: Total Kafka publication failures.
+    - `processed_events`: Total events successfully projected to the read model.
+    - `skipped_events`: Total duplicate events detected and skipped by the inbox.
+    - `failed_events`: Total projection execution failures.
+
+### Replay Observability
+The replay process provides clear progress logging:
+- Start and completion logs with duration.
+- Progress updates every 500 events (or at 100% completion) including percentage and event counts.
+- Detailed error logging if a projection fails during replay.
 
 ## Getting Started
 

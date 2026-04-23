@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 
 	"github.com/segmentio/kafka-go"
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
@@ -49,27 +49,32 @@ func (c *WalletEventConsumer) consume(ctx context.Context, topic string) {
 	})
 	defer r.Close()
 
-	log.Printf("Kafka consumer started for topic: %s", topic)
+	slog.Info("Kafka consumer started", "topic", topic, "groupId", c.groupID)
 	for {
 		m, err := r.ReadMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return // context cancelled
 			}
-			log.Printf("Error reading from topic %s: %v", topic, err)
+			slog.Error("Error reading from Kafka", "topic", topic, "error", err)
 			continue
 		}
 
 		var envelope kafkaEnvelope
 		if err := json.Unmarshal(m.Value, &envelope); err != nil {
-			log.Printf("Failed to unmarshal envelope on topic %s: %v", topic, err)
+			slog.Error("Failed to unmarshal envelope", "topic", topic, "error", err)
 			continue
 		}
+
+		slog.Debug("Kafka message received", "eventId", envelope.EventID, "type", envelope.Type)
 
 		if err := c.dispatch(envelope); err != nil {
 			// Leave the event unprocessed; Kafka will redeliver on restart or
 			// rebalance. The inbox makes duplicate deliveries safe.
-			log.Printf("Error handling event (eventId=%s type=%s): %v", envelope.EventID, envelope.Type, err)
+			slog.Error("Error handling event",
+				"eventId", envelope.EventID,
+				"type", envelope.Type,
+				"error", err)
 		}
 	}
 }
@@ -101,7 +106,7 @@ func (c *WalletEventConsumer) dispatch(envelope kafkaEnvelope) error {
 		return c.eventHandler.OnWalletDebited(&event)
 
 	default:
-		log.Printf("Unknown event type: %s", envelope.Type)
+		slog.Warn("Unknown event type", "type", envelope.Type)
 		return nil
 	}
 }

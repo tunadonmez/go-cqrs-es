@@ -3,12 +3,13 @@ package infrastructure
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 	"github.com/tunadonmez/go-cqrs-es/wallet-common/dto"
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
+	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/domain"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -133,11 +134,23 @@ func (h *WalletEventHandler) applyIdempotent(event corevents.BaseEvent, apply fu
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			log.Printf("projection: skipping duplicate event %s (type=%s aggregate=%s)",
-				event.GetEventID(), event.EventTypeName(), event.GetAggregateID())
+			slog.Info("projection: skipping duplicate event",
+				"eventId", event.GetEventID(),
+				"type", event.EventTypeName(),
+				"aggregateId", event.GetAggregateID())
+			observability.DefaultMetrics.SkippedEvents.Add(1)
 			return nil
 		}
-		return apply(tx)
+		if err := apply(tx); err != nil {
+			observability.DefaultMetrics.FailedEvents.Add(1)
+			return err
+		}
+		observability.DefaultMetrics.ProcessedEvents.Add(1)
+		slog.Info("Projection applied",
+			"eventId", event.GetEventID(),
+			"type", event.EventTypeName(),
+			"aggregateId", event.GetAggregateID())
+		return nil
 	})
 }
 
