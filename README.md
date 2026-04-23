@@ -1,131 +1,143 @@
-# Bank Account Microservices — CQRS & Event Sourcing
+# Wallet / Payment Ledger Service — CQRS & Event Sourcing
 
-A bank account system built with **CQRS (Command Query Responsibility Segregation)** and **Event Sourcing** patterns using Go microservices.
+A wallet and payment-ledger system built with **CQRS (Command Query Responsibility Segregation)** and **Event Sourcing** using Go microservices.
 
 ## Architecture
 
-**Command flow:** HTTP → Controller → CommandDispatcher → CommandHandler → AccountAggregate → EventStore (MongoDB) → Kafka
+**Command flow:** HTTP → Controller → CommandDispatcher → CommandHandler → WalletAggregate → EventStore (MongoDB) → Kafka
 
-**Read model projection:** Kafka → EventConsumer → EventHandler → MySQL read model
+**Read model projection:** Kafka → EventConsumer → EventHandler → PostgreSQL read model
 
-**Query flow:** HTTP → Controller → QueryDispatcher → QueryHandler → MySQL read model → HTTP response
+**Query flow:** HTTP → Controller → QueryDispatcher → QueryHandler → PostgreSQL read model → HTTP response
 
 ### Project Structure
 
 ```
 go-cqrs-es/
-├── cqrs-core/         Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
-├── account-common/    Shared domain events and DTOs
-├── account-cmd/       Write service — MongoDB + Kafka producer
-└── account-query/     Read service — MySQL + Kafka consumer
+├── cqrs-core/      Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
+├── wallet-common/  Shared wallet events and DTOs
+├── wallet-cmd/     Write service — MongoDB + Kafka producer
+└── wallet-query/   Read service — PostgreSQL + Kafka consumer
 ```
 
 ### Tech Stack
 
-| Component   | Technology          | Purpose                      |
-|-------------|---------------------|------------------------------|
-| Language    | Go 1.26.1           | All services                 |
-| Event store | MongoDB             | Immutable event log          |
-| Read model  | MySQL (GORM)        | Queryable account projections|
-| Messaging   | Apache Kafka (KRaft)| Event distribution           |
-| HTTP        | Gin                 | REST API routing             |
+| Component   | Technology           | Purpose                       |
+|-------------|----------------------|-------------------------------|
+| Language    | Go 1.26.1            | All services                  |
+| Event store | MongoDB              | Immutable wallet event log    |
+| Read model  | PostgreSQL (GORM)    | Wallet balances and ledger    |
+| Messaging   | Apache Kafka (KRaft) | Event distribution            |
+| HTTP        | Gin                  | REST API routing              |
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.26.1+
-- MongoDB, MySQL, and Apache Kafka running locally (or via containers)
+- MongoDB, PostgreSQL, and Apache Kafka running locally (or via containers)
 
 ### Run Locally
 
 ```bash
 # Command service
-cd account-cmd
+cd wallet-cmd
 PORT=5000 \
-MONGODB_URI="mongodb://root:root@localhost:27017/bankAccount?authSource=admin" \
+MONGODB_URI="mongodb://root:root@localhost:27017/walletLedger?authSource=admin" \
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
 go run .
 
 # Query service
-cd ../account-query
+cd ../wallet-query
 PORT=5001 \
-MYSQL_DSN="root:techbankRootPsw@tcp(localhost:3306)/bankAccount?charset=utf8mb4&parseTime=True&loc=Local" \
+POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger port=5432 sslmode=disable TimeZone=UTC" \
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
-KAFKA_GROUP_ID="bankaccConsumer" \
+KAFKA_GROUP_ID="walletConsumer" \
 go run .
 ```
 
 ### Build
 
 ```bash
-cd account-cmd && go build -o account-cmd .
-cd account-query && go build -o account-query .
+cd wallet-cmd && go build -o wallet-cmd .
+cd wallet-query && go build -o wallet-query .
 ```
 
 ### Test
 
 ```bash
-cd cqrs-core && go test ./...
-cd ../account-common && go test ./...
-cd ../account-cmd && go test ./...
-cd ../account-query && go test ./...
+go test ./cqrs-core/... ./wallet-common/... ./wallet-cmd/... ./wallet-query/...
 ```
 
 ## API Reference
 
 ### Command Service (port 5000)
 
-#### Open Account
+#### Create Wallet
 
 ```
-POST /api/v1/openBankAccount
-```
-
-```json
-{
-  "accountHolder": "John Doe",
-  "accountType": "SAVINGS",
-  "openingBalance": 500.00
-}
-```
-
-#### Deposit Funds
-
-```
-PUT /api/v1/depositFunds/:id
+POST /api/v1/wallets
 ```
 
 ```json
 {
-  "amount": 200.00
+  "owner": "Jane Doe",
+  "currency": "USD",
+  "openingBalance": 500.0
 }
 ```
 
-#### Withdraw Funds
+#### Credit Wallet
 
 ```
-PUT /api/v1/withdrawFunds/:id
+PUT /api/v1/wallets/:id/credit
 ```
 
 ```json
 {
-  "amount": 100.00
+  "amount": 200.0,
+  "reference": "topup-001",
+  "description": "manual top-up"
 }
 ```
 
-#### Close Account
+#### Debit Wallet
 
 ```
-DELETE /api/v1/closeBankAccount/:id
+PUT /api/v1/wallets/:id/debit
+```
+
+```json
+{
+  "amount": 100.0,
+  "reference": "purchase-001",
+  "description": "merchant charge"
+}
+```
+
+#### Transfer Between Wallets
+
+```
+POST /api/v1/wallets/:id/transfer
+```
+
+```json
+{
+  "destinationWalletId": "wallet-456",
+  "amount": 75.0,
+  "reference": "transfer-001",
+  "description": "settlement transfer"
+}
 ```
 
 ### Query Service (port 5001)
 
-| Method | Path                   | Description        |
-|--------|------------------------|--------------------|
-| `GET`  | `/api/v1/accounts`     | List all accounts  |
-| `GET`  | `/api/v1/accounts/:id` | Get account by ID  |
+| Method | Path                             | Description                  |
+|--------|----------------------------------|------------------------------|
+| `GET`  | `/api/v1/wallets`                | List all wallets             |
+| `GET`  | `/api/v1/wallets/:id`            | Get wallet details           |
+| `GET`  | `/api/v1/wallets/:id/balance`    | Get wallet balance           |
+| `GET`  | `/api/v1/wallets/:id/transactions` | Get wallet transaction history |
 
 ### Response Codes
 
@@ -134,16 +146,15 @@ DELETE /api/v1/closeBankAccount/:id
 
 ## Domain Events
 
-| Event                | Description                    |
-|----------------------|--------------------------------|
-| `AccountOpenedEvent` | Account created with initial balance |
-| `FundsDepositedEvent`| Funds added to account         |
-| `FundsWithdrawnEvent`| Funds removed from account     |
-| `AccountClosedEvent` | Account deactivated            |
+| Event                 | Description                               |
+|-----------------------|-------------------------------------------|
+| `WalletCreatedEvent`  | Wallet created with initial balance       |
+| `WalletCreditedEvent` | Wallet credited directly or by transfer   |
+| `WalletDebitedEvent`  | Wallet debited directly or by transfer    |
 
 ## Key Design Decisions
 
 - **Reflection-based dispatch** — Commands, queries, and aggregate events are routed via `reflect.Type`, eliminating switch statements.
 - **Event Registry** — Domain events self-register via `init()` functions, enabling deserialization from BSON/JSON without explicit type mappings.
-- **Optimistic concurrency** — Event store checks `expectedVersion` before persisting to prevent conflicting writes.
+- **Optimistic concurrency** — The event store checks `expectedVersion` before persisting to prevent conflicting writes.
 - **Eventual consistency** — The read model is updated asynchronously via Kafka; queries may temporarily lag behind commands.
