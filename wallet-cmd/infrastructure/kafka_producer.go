@@ -9,19 +9,32 @@ import (
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 )
 
-// KafkaMessage is the envelope sent over Kafka.
+// KafkaMessage is the envelope sent over Kafka. EventID is surfaced at the
+// envelope level so consumers can log and dedupe without unmarshalling the
+// inner event payload.
 type KafkaMessage struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	EventID string          `json:"eventId"`
+	Type    string          `json:"type"`
+	Data    json.RawMessage `json:"data"`
 }
 
 // WalletEventProducer publishes domain events to Kafka.
 type WalletEventProducer struct {
-	bootstrapServers string
+	writer *kafka.Writer
 }
 
 func NewWalletEventProducer(bootstrapServers string) *WalletEventProducer {
-	return &WalletEventProducer{bootstrapServers: bootstrapServers}
+	writer := &kafka.Writer{
+		Addr:         kafka.TCP(bootstrapServers),
+		Balancer:     &kafka.Hash{},
+		BatchTimeout: 10 * time.Millisecond,
+		RequiredAcks: kafka.RequireAll,
+	}
+	return &WalletEventProducer{writer: writer}
+}
+
+func (p *WalletEventProducer) Close() error {
+	return p.writer.Close()
 }
 
 func (p *WalletEventProducer) Produce(topic string, event corevents.BaseEvent) error {
@@ -29,25 +42,24 @@ func (p *WalletEventProducer) Produce(topic string, event corevents.BaseEvent) e
 	if err != nil {
 		return err
 	}
-	envelope := KafkaMessage{Type: event.EventTypeName(), Data: data}
+	envelope := KafkaMessage{
+		EventID: event.GetEventID(),
+		Type:    event.EventTypeName(),
+		Data:    data,
+	}
 	msg, err := json.Marshal(envelope)
 	if err != nil {
 		return err
 	}
 
-	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: []string{p.bootstrapServers},
-		Topic:   topic,
-	})
-	defer writer.Close()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Use aggregate ID as the partition key so all events for the same
+	// Use the aggregate ID as the partition key so all events for the same
 	// aggregate land in the same partition, preserving ordering.
-	return writer.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(event.GetID()),
+	return p.writer.WriteMessages(ctx, kafka.Message{
+		Topic: topic,
+		Key:   []byte(event.GetAggregateID()),
 		Value: msg,
 	})
 }

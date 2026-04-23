@@ -1,9 +1,19 @@
 package events
 
 // BaseEvent is the interface all domain events must implement.
+//
+// Every event has two identifiers:
+//   - EventID     — a stable, unique identifier for this specific event instance.
+//     It follows the event through the event store, the outbox,
+//     the Kafka envelope, and the query-side idempotency table.
+//   - AggregateID — the identifier of the aggregate the event belongs to.
+//     Used both as the partition key on Kafka and to rebuild
+//     aggregate state on the write side.
 type BaseEvent interface {
-	GetID() string
-	SetID(id string)
+	GetEventID() string
+	SetEventID(id string)
+	GetAggregateID() string
+	SetAggregateID(id string)
 	GetVersion() int
 	SetVersion(version int)
 	EventTypeName() string
@@ -11,11 +21,14 @@ type BaseEvent interface {
 
 // BaseEventData provides common fields for all events via embedding.
 type BaseEventData struct {
-	ID      string `json:"id" bson:"id"`
-	Version int    `json:"version" bson:"version"`
+	EventID     string `json:"eventId" bson:"eventId"`
+	AggregateID string `json:"aggregateId" bson:"aggregateId"`
+	Version     int    `json:"version" bson:"version"`
 }
 
-func (b *BaseEventData) GetID() string    { return b.ID }
-func (b *BaseEventData) SetID(id string)  { b.ID = id }
-func (b *BaseEventData) GetVersion() int  { return b.Version }
-func (b *BaseEventData) SetVersion(v int) { b.Version = v }
+func (b *BaseEventData) GetEventID() string       { return b.EventID }
+func (b *BaseEventData) SetEventID(id string)     { b.EventID = id }
+func (b *BaseEventData) GetAggregateID() string   { return b.AggregateID }
+func (b *BaseEventData) SetAggregateID(id string) { b.AggregateID = id }
+func (b *BaseEventData) GetVersion() int          { return b.Version }
+func (b *BaseEventData) SetVersion(v int)         { b.Version = v }

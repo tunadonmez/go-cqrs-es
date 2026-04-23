@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 
@@ -43,7 +45,14 @@ func (a *AggregateRoot) ApplyChange(self interface{}, event events.BaseEvent, is
 	}
 }
 
+// RaiseEvent is called by aggregates when a new domain event is produced.
+// A stable EventID is assigned here when missing so that downstream
+// components (event store, outbox, Kafka envelope, query-side inbox)
+// can rely on the identifier being present.
 func (a *AggregateRoot) RaiseEvent(self interface{}, event events.BaseEvent) {
+	if event.GetEventID() == "" {
+		event.SetEventID(newEventID())
+	}
 	a.ApplyChange(self, event, true)
 }
 
@@ -51,4 +60,15 @@ func (a *AggregateRoot) ReplayEvents(self interface{}, events []events.BaseEvent
 	for _, event := range events {
 		a.ApplyChange(self, event, false)
 	}
+}
+
+// newEventID returns a 128-bit random identifier rendered as a hex string.
+// Using crypto/rand keeps cqrs-core free of third-party dependencies.
+func newEventID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// rand.Read almost never fails; panic so we never silently emit a blank id.
+		panic(fmt.Errorf("failed to generate event id: %w", err))
+	}
+	return hex.EncodeToString(b[:])
 }

@@ -32,8 +32,8 @@ func main() {
 	}
 	log.Println("Connected to PostgreSQL")
 
-	// Auto-migrate the read model
-	if err := db.AutoMigrate(&domain.Wallet{}, &domain.Transaction{}); err != nil {
+	// Auto-migrate the read model and the processed-events inbox.
+	if err := db.AutoMigrate(&domain.Wallet{}, &domain.Transaction{}, &infrastructure.ProcessedEvent{}); err != nil {
 		log.Fatalf("AutoMigrate error: %v", err)
 	}
 

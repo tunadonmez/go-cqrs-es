@@ -11,10 +11,13 @@ import (
 
 const eventsTopic = "WalletEvents"
 
-// kafkaEnvelope matches the envelope produced by the command service.
+// kafkaEnvelope matches the envelope produced by the write side.
+// EventID is surfaced on the envelope for observability and also lives
+// inside the serialized event payload itself (via BaseEventData.EventID).
 type kafkaEnvelope struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	EventID string          `json:"eventId"`
+	Type    string          `json:"type"`
+	Data    json.RawMessage `json:"data"`
 }
 
 // WalletEventConsumer consumes domain events from Kafka and projects them.
@@ -64,7 +67,9 @@ func (c *WalletEventConsumer) consume(ctx context.Context, topic string) {
 		}
 
 		if err := c.dispatch(envelope); err != nil {
-			log.Printf("Error handling event %s: %v", envelope.Type, err)
+			// Leave the event unprocessed; Kafka will redeliver on restart or
+			// rebalance. The inbox makes duplicate deliveries safe.
+			log.Printf("Error handling event (eventId=%s type=%s): %v", envelope.EventID, envelope.Type, err)
 		}
 	}
 }
@@ -76,6 +81,7 @@ func (c *WalletEventConsumer) dispatch(envelope kafkaEnvelope) error {
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
 			return err
 		}
+		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
 		return c.eventHandler.OnWalletCreated(&event)
 
 	case "WalletCreditedEvent":
@@ -83,6 +89,7 @@ func (c *WalletEventConsumer) dispatch(envelope kafkaEnvelope) error {
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
 			return err
 		}
+		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
 		return c.eventHandler.OnWalletCredited(&event)
 
 	case "WalletDebitedEvent":
@@ -90,10 +97,19 @@ func (c *WalletEventConsumer) dispatch(envelope kafkaEnvelope) error {
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
 			return err
 		}
+		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
 		return c.eventHandler.OnWalletDebited(&event)
 
 	default:
 		log.Printf("Unknown event type: %s", envelope.Type)
 		return nil
+	}
+}
+
+// fallbackEventID copies the envelope-level id onto the inner event when the
+// serialized payload did not carry one (older producers).
+func fallbackEventID(target *string, envelopeID string) {
+	if *target == "" {
+		*target = envelopeID
 	}
 }

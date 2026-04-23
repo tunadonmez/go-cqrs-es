@@ -45,13 +45,13 @@ func NewWalletAggregateFromCommand(cmd *commands.CreateWalletCommand) (*WalletAg
 		CreatedAt:      time.Now().UTC(),
 		OpeningBalance: cmd.OpeningBalance,
 	}
-	event.SetID(cmd.ID)
+	event.SetAggregateID(cmd.ID)
 	w.RaiseEvent(w, event)
 	return w, nil
 }
 
 func (w *WalletAggregate) ApplyWalletCreatedEvent(event *commonevents.WalletCreatedEvent) {
-	w.ID = event.GetID()
+	w.ID = event.GetAggregateID()
 	w.owner = event.Owner
 	w.currency = event.Currency
 	w.createdAt = event.CreatedAt
@@ -95,13 +95,13 @@ func (w *WalletAggregate) credit(amount float64, transactionType dto.Transaction
 		Description:          strings.TrimSpace(description),
 		OccurredAt:           occurredAt,
 	}
-	event.SetID(w.ID)
+	event.SetAggregateID(w.ID)
 	w.RaiseEvent(w, event)
 	return nil
 }
 
 func (w *WalletAggregate) ApplyWalletCreditedEvent(event *commonevents.WalletCreditedEvent) {
-	w.ID = event.GetID()
+	w.ID = event.GetAggregateID()
 	w.balance += event.Amount
 }
 
@@ -120,12 +120,12 @@ func (w *WalletAggregate) debit(amount float64, transactionType dto.TransactionT
 		Description:          strings.TrimSpace(description),
 		OccurredAt:           occurredAt,
 	}
-	event.SetID(w.ID)
+	event.SetAggregateID(w.ID)
 	w.RaiseEvent(w, event)
 	return nil
 }
 
 func (w *WalletAggregate) ApplyWalletDebitedEvent(event *commonevents.WalletDebitedEvent) {
-	w.ID = event.GetID()
+	w.ID = event.GetAggregateID()
 	w.balance -= event.Amount
 }

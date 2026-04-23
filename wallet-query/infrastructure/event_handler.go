@@ -1,15 +1,25 @@
 package infrastructure
 
 import (
+	"errors"
 	"fmt"
+	"log"
+	"time"
 
+	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 	"github.com/tunadonmez/go-cqrs-es/wallet-common/dto"
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/domain"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // WalletEventHandler projects domain events onto PostgreSQL read models.
+//
+// All projection calls run through applyIdempotent, which guarantees
+// the projection side-effects and the "event processed" record commit
+// atomically in a single transaction. Duplicate deliveries short-circuit
+// before any read-model mutation happens.
 type WalletEventHandler struct {
 	repository *WalletRepository
 }
@@ -19,26 +29,26 @@ func NewWalletEventHandler(repo *WalletRepository) *WalletEventHandler {
 }
 
 func (h *WalletEventHandler) OnWalletCreated(event *commonevents.WalletCreatedEvent) error {
-	wallet := &domain.Wallet{
-		ID:        event.GetID(),
-		Owner:     event.Owner,
-		Currency:  event.Currency,
-		CreatedAt: event.CreatedAt,
-		Balance:   event.OpeningBalance,
-	}
+	return h.applyIdempotent(event, func(tx *gorm.DB) error {
+		wallet := &domain.Wallet{
+			ID:        event.GetAggregateID(),
+			Owner:     event.Owner,
+			Currency:  event.Currency,
+			CreatedAt: event.CreatedAt,
+			Balance:   event.OpeningBalance,
+		}
 
-	transaction := &domain.Transaction{
-		ID:           transactionID(event.GetID(), event.GetVersion()),
-		WalletID:     event.GetID(),
-		Type:         dto.TransactionTypeOpeningBalance,
-		Amount:       event.OpeningBalance,
-		Description:  "wallet created",
-		BalanceAfter: event.OpeningBalance,
-		OccurredAt:   event.CreatedAt,
-		EventVersion: event.GetVersion(),
-	}
+		transaction := &domain.Transaction{
+			ID:           transactionID(event.GetAggregateID(), event.GetVersion()),
+			WalletID:     event.GetAggregateID(),
+			Type:         dto.TransactionTypeOpeningBalance,
+			Amount:       event.OpeningBalance,
+			Description:  "wallet created",
+			BalanceAfter: event.OpeningBalance,
+			OccurredAt:   event.CreatedAt,
+			EventVersion: event.GetVersion(),
+		}
 
-	return h.repository.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
@@ -47,26 +57,26 @@ func (h *WalletEventHandler) OnWalletCreated(event *commonevents.WalletCreatedEv
 }
 
 func (h *WalletEventHandler) OnWalletCredited(event *commonevents.WalletCreditedEvent) error {
-	wallet, err := h.repository.FindWalletByID(event.GetID())
-	if err != nil {
-		return nil
-	}
-	wallet.Balance += event.Amount
+	return h.applyIdempotent(event, func(tx *gorm.DB) error {
+		wallet, err := findWalletInTx(tx, event.GetAggregateID())
+		if err != nil {
+			return err
+		}
+		wallet.Balance += event.Amount
 
-	transaction := &domain.Transaction{
-		ID:                   transactionID(event.GetID(), event.GetVersion()),
-		WalletID:             event.GetID(),
-		Type:                 event.TransactionType,
-		Amount:               event.Amount,
-		CounterpartyWalletID: event.CounterpartyWalletID,
-		Reference:            event.Reference,
-		Description:          event.Description,
-		BalanceAfter:         wallet.Balance,
-		OccurredAt:           event.OccurredAt,
-		EventVersion:         event.GetVersion(),
-	}
+		transaction := &domain.Transaction{
+			ID:                   transactionID(event.GetAggregateID(), event.GetVersion()),
+			WalletID:             event.GetAggregateID(),
+			Type:                 event.TransactionType,
+			Amount:               event.Amount,
+			CounterpartyWalletID: event.CounterpartyWalletID,
+			Reference:            event.Reference,
+			Description:          event.Description,
+			BalanceAfter:         wallet.Balance,
+			OccurredAt:           event.OccurredAt,
+			EventVersion:         event.GetVersion(),
+		}
 
-	return h.repository.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
@@ -75,31 +85,68 @@ func (h *WalletEventHandler) OnWalletCredited(event *commonevents.WalletCredited
 }
 
 func (h *WalletEventHandler) OnWalletDebited(event *commonevents.WalletDebitedEvent) error {
-	wallet, err := h.repository.FindWalletByID(event.GetID())
-	if err != nil {
-		return nil
-	}
-	wallet.Balance -= event.Amount
+	return h.applyIdempotent(event, func(tx *gorm.DB) error {
+		wallet, err := findWalletInTx(tx, event.GetAggregateID())
+		if err != nil {
+			return err
+		}
+		wallet.Balance -= event.Amount
 
-	transaction := &domain.Transaction{
-		ID:                   transactionID(event.GetID(), event.GetVersion()),
-		WalletID:             event.GetID(),
-		Type:                 event.TransactionType,
-		Amount:               event.Amount,
-		CounterpartyWalletID: event.CounterpartyWalletID,
-		Reference:            event.Reference,
-		Description:          event.Description,
-		BalanceAfter:         wallet.Balance,
-		OccurredAt:           event.OccurredAt,
-		EventVersion:         event.GetVersion(),
-	}
+		transaction := &domain.Transaction{
+			ID:                   transactionID(event.GetAggregateID(), event.GetVersion()),
+			WalletID:             event.GetAggregateID(),
+			Type:                 event.TransactionType,
+			Amount:               event.Amount,
+			CounterpartyWalletID: event.CounterpartyWalletID,
+			Reference:            event.Reference,
+			Description:          event.Description,
+			BalanceAfter:         wallet.Balance,
+			OccurredAt:           event.OccurredAt,
+			EventVersion:         event.GetVersion(),
+		}
 
-	return h.repository.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
 		return tx.Save(transaction).Error
 	})
+}
+
+// applyIdempotent records the event in the processed_events table and then
+// executes the projection inside a single DB transaction. If the event has
+// already been processed, apply is never invoked and the transaction commits
+// as a no-op.
+func (h *WalletEventHandler) applyIdempotent(event corevents.BaseEvent, apply func(tx *gorm.DB) error) error {
+	if event.GetEventID() == "" {
+		return errors.New("event is missing event id — cannot apply idempotently")
+	}
+	return h.repository.db.Transaction(func(tx *gorm.DB) error {
+		record := &ProcessedEvent{
+			EventID:     event.GetEventID(),
+			EventType:   event.EventTypeName(),
+			AggregateID: event.GetAggregateID(),
+			Version:     event.GetVersion(),
+			ProcessedAt: time.Now().UTC(),
+		}
+		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(record)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			log.Printf("projection: skipping duplicate event %s (type=%s aggregate=%s)",
+				event.GetEventID(), event.EventTypeName(), event.GetAggregateID())
+			return nil
+		}
+		return apply(tx)
+	})
+}
+
+func findWalletInTx(tx *gorm.DB, id string) (*domain.Wallet, error) {
+	var wallet domain.Wallet
+	if err := tx.First(&wallet, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("wallet %s not found: %w", id, err)
+	}
+	return &wallet, nil
 }
 
 func transactionID(walletID string, version int) string {

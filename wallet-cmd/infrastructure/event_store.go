@@ -6,10 +6,10 @@ import (
 	"time"
 
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
-	"github.com/tunadonmez/go-cqrs-es/cqrs-core/producers"
 	"github.com/tunadonmez/go-cqrs-es/wallet-cmd/domain"
 )
 
+// EventsTopic is the Kafka topic all wallet events are published to.
 const EventsTopic = "WalletEvents"
 
 var (
@@ -18,13 +18,16 @@ var (
 )
 
 // WalletEventStore is the write-side event store backed by MongoDB.
+//
+// Each SaveEvents call persists the events together with a PENDING outbox
+// entry in the same document; Kafka publishing has been moved out of the
+// command path and is handled asynchronously by OutboxPublisher.
 type WalletEventStore struct {
-	producer   producers.EventProducer
 	repository *EventStoreRepository
 }
 
-func NewWalletEventStore(producer producers.EventProducer, repo *EventStoreRepository) *WalletEventStore {
-	return &WalletEventStore{producer: producer, repository: repo}
+func NewWalletEventStore(repo *EventStoreRepository) *WalletEventStore {
+	return &WalletEventStore{repository: repo}
 }
 
 func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseEvent, expectedVersion int) error {
@@ -43,24 +46,26 @@ func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseE
 	for _, event := range evts {
 		version++
 		event.SetVersion(version)
+		if event.GetAggregateID() == "" {
+			event.SetAggregateID(aggregateID)
+		}
+		if event.GetEventID() == "" {
+			return fmt.Errorf("event %s is missing an event id", event.EventTypeName())
+		}
 
 		model := &EventModelDoc{
-			TimeStamp:           time.Now(),
+			TimeStamp:           time.Now().UTC(),
 			AggregateIdentifier: aggregateID,
 			AggregateType:       fmt.Sprintf("%T", domain.WalletAggregate{}),
 			Version:             version,
+			EventID:             event.GetEventID(),
 			EventType:           event.EventTypeName(),
 			EventData:           event,
+			PublishStatus:       PublishStatusPending,
 		}
 
-		persisted, err := s.repository.Save(model)
-		if err != nil {
+		if _, err := s.repository.Save(model); err != nil {
 			return err
-		}
-		if !persisted.ID.IsZero() {
-			if err := s.producer.Produce(EventsTopic, event); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

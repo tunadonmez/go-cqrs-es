@@ -17,7 +17,6 @@ import (
 
 	corecommands "github.com/tunadonmez/go-cqrs-es/cqrs-core/commands"
 	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
-	coreproducers "github.com/tunadonmez/go-cqrs-es/cqrs-core/producers"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -41,10 +40,20 @@ func main() {
 
 	db := client.Database("walletLedger")
 
-	// Wire up dependencies
+	// Wire up write-side components.
 	repo := infrastructure.NewEventStoreRepository(db)
-	var producer coreproducers.EventProducer = infrastructure.NewWalletEventProducer(cfg.KafkaBootstrap)
-	var eventStore coreinfra.EventStore = infrastructure.NewWalletEventStore(producer, repo)
+	producer := infrastructure.NewWalletEventProducer(cfg.KafkaBootstrap)
+	defer producer.Close()
+
+	// Start the transactional outbox publisher. SaveEvents only writes events
+	// (with a PENDING outbox marker) to MongoDB; this background worker owns
+	// the Kafka delivery step.
+	outbox := infrastructure.NewOutboxPublisher(repo, producer, infrastructure.EventsTopic)
+	outboxCtx, cancelOutbox := context.WithCancel(context.Background())
+	defer cancelOutbox()
+	outbox.Start(outboxCtx)
+
+	var eventStore coreinfra.EventStore = infrastructure.NewWalletEventStore(repo)
 	eventSourcingHandler := infrastructure.NewWalletEventSourcingHandler(eventStore)
 	cmdHandler := application.NewCommandHandler(eventSourcingHandler)
 	cmdDispatcher := coreinfra.NewCommandDispatcher()

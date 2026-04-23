@@ -4,9 +4,37 @@ A wallet and payment-ledger system built with **CQRS (Command Query Responsibili
 
 ## Architecture
 
-**Command flow:** HTTP → Controller → CommandDispatcher → CommandHandler → WalletAggregate → EventStore (MongoDB) → Kafka
+**Command flow:**
 
-**Read model projection:** Kafka → EventConsumer → EventHandler → PostgreSQL read model
+```
+HTTP
+  → Controller
+    → CommandDispatcher
+      → CommandHandler
+        → WalletAggregate (raises events)
+          → EventStore (MongoDB, single atomic write per event: event + PENDING outbox entry)
+```
+
+**Asynchronous publishing (new):**
+
+```
+OutboxPublisher (background worker)
+  → reads PENDING outbox entries from the event store
+    → publishes to Kafka (key = aggregate ID)
+      → marks entries PUBLISHED
+```
+
+**Read-model projection:**
+
+```
+Kafka
+  → WalletEventConsumer
+    → WalletEventHandler
+      → DB transaction:
+          • INSERT into processed_events (ON CONFLICT DO NOTHING) — inbox check
+          • apply projection to Wallet / Transaction tables
+        → COMMIT
+```
 
 **Query flow:** HTTP → Controller → QueryDispatcher → QueryHandler → PostgreSQL read model → HTTP response
 
@@ -16,19 +44,48 @@ A wallet and payment-ledger system built with **CQRS (Command Query Responsibili
 go-cqrs-es/
 ├── cqrs-core/      Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
 ├── wallet-common/  Shared wallet events and DTOs
-├── wallet-cmd/     Write service — MongoDB + Kafka producer
-└── wallet-query/   Read service — PostgreSQL + Kafka consumer
+├── wallet-cmd/     Write service — MongoDB + OutboxPublisher → Kafka
+└── wallet-query/   Read service — PostgreSQL + idempotent Kafka consumer
 ```
 
 ### Tech Stack
 
-| Component   | Technology           | Purpose                       |
-|-------------|----------------------|-------------------------------|
-| Language    | Go 1.26.1            | All services                  |
-| Event store | MongoDB              | Immutable wallet event log    |
-| Read model  | PostgreSQL (GORM)    | Wallet balances and ledger    |
-| Messaging   | Apache Kafka (KRaft) | Event distribution            |
-| HTTP        | Gin                  | REST API routing              |
+| Component   | Technology           | Purpose                                  |
+|-------------|----------------------|------------------------------------------|
+| Language    | Go 1.26.1            | All services                             |
+| Event store | MongoDB              | Immutable wallet event log + outbox      |
+| Read model  | PostgreSQL (GORM)    | Wallet balances, ledger, inbox           |
+| Messaging   | Apache Kafka (KRaft) | Event distribution                       |
+| HTTP        | Gin                  | REST API routing                         |
+
+## Reliability Improvements
+
+### Transactional Outbox (write side)
+
+Events are persisted and registered for publishing in a single atomic MongoDB write. Kafka delivery is performed asynchronously by the `OutboxPublisher`, decoupling the command path from broker availability.
+
+- Each event document in the `eventStore` collection carries its own outbox state (`publishStatus`, `publishedAt`, `attempts`, `lastError`). Persisting an event is therefore equivalent to creating a `PENDING` outbox entry in the same write.
+- `WalletEventStore.SaveEvents` no longer calls the producer. If the HTTP request returns success, the events are durable and guaranteed to be published eventually.
+- `OutboxPublisher` polls for `PENDING` entries in insertion order (by `_id`), publishes to Kafka (partition key = aggregate ID), and flips entries to `PUBLISHED` on success. On failure it increments `attempts` and leaves the entry `PENDING` for a retry on the next tick.
+- Because the publisher aborts a batch at the first failure, per-aggregate ordering is preserved even under partial Kafka outages.
+
+### Idempotent Projections (read side)
+
+The projection pipeline is safe under at-least-once delivery.
+
+- A `processed_events` table in PostgreSQL records every `(event_id, event_type, aggregate_id, version, processed_at)` that has been projected.
+- Projections run inside a single DB transaction that first `INSERT … ON CONFLICT DO NOTHING` into `processed_events`. If the insert affects zero rows, the event is a duplicate and the projection body is skipped entirely.
+- Projection writes and inbox writes commit together, so a crash between the two is impossible.
+
+### Stable Event Identifiers
+
+Every domain event carries a per-event `EventID` (128-bit random, populated on `RaiseEvent` if missing). The identifier is propagated through:
+
+1. The event store document (`eventId` column + inside the embedded `eventData`).
+2. The Kafka envelope (`eventId` at the envelope level, plus inside the event payload).
+3. The projection inbox (`processed_events.event_id`).
+
+Commands keep their own identifier contract (`IdentifiedCommand`) and remain unchanged.
 
 ## Getting Started
 
@@ -54,6 +111,12 @@ POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
 KAFKA_GROUP_ID="walletConsumer" \
 go run .
+```
+
+### Run with Docker
+
+```bash
+docker-compose up
 ```
 
 ### Build
@@ -132,11 +195,11 @@ POST /api/v1/wallets/:id/transfer
 
 ### Query Service (port 5001)
 
-| Method | Path                             | Description                  |
-|--------|----------------------------------|------------------------------|
-| `GET`  | `/api/v1/wallets`                | List all wallets             |
-| `GET`  | `/api/v1/wallets/:id`            | Get wallet details           |
-| `GET`  | `/api/v1/wallets/:id/balance`    | Get wallet balance           |
+| Method | Path                               | Description                   |
+|--------|------------------------------------|-------------------------------|
+| `GET`  | `/api/v1/wallets`                  | List all wallets              |
+| `GET`  | `/api/v1/wallets/:id`              | Get wallet details            |
+| `GET`  | `/api/v1/wallets/:id/balance`      | Get wallet balance            |
 | `GET`  | `/api/v1/wallets/:id/transactions` | Get wallet transaction history |
 
 ### Response Codes
@@ -152,9 +215,13 @@ POST /api/v1/wallets/:id/transfer
 | `WalletCreditedEvent` | Wallet credited directly or by transfer   |
 | `WalletDebitedEvent`  | Wallet debited directly or by transfer    |
 
+Every event embeds `BaseEventData` which carries `EventID`, `AggregateID`, and `Version`.
+
 ## Key Design Decisions
 
-- **Reflection-based dispatch** — Commands, queries, and aggregate events are routed via `reflect.Type`, eliminating switch statements.
+- **Reflection-based dispatch** — Commands, queries, and aggregate events route via `reflect.Type`, eliminating switch statements.
 - **Event Registry** — Domain events self-register via `init()` functions, enabling deserialization from BSON/JSON without explicit type mappings.
 - **Optimistic concurrency** — The event store checks `expectedVersion` before persisting to prevent conflicting writes.
-- **Eventual consistency** — The read model is updated asynchronously via Kafka; queries may temporarily lag behind commands.
+- **Event-store-as-outbox** — A single collection holds events and their publish state so the atomic unit is always a single-document write. This removes the dependency on multi-document MongoDB transactions (and therefore on a replica-set configuration).
+- **At-least-once with idempotent projections** — The read side treats duplicates as the normal case and relies on the inbox table for correctness, not on broker delivery guarantees.
+- **Eventual consistency** — Queries may lag behind commands by one outbox tick plus the Kafka round-trip.
