@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
+	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/domain"
 	"gorm.io/gorm"
 )
@@ -55,13 +56,14 @@ func (r *Replayer) Run(ctx context.Context, opts ReplayOptions) error {
 		return fmt.Errorf("count events: %w", err)
 	}
 
-	slog.Info("Replay started", "scope", scope, "totalEvents", total)
+	observability.DefaultMetrics.ReplayRuns.Add(1)
+	slog.Info("Replay started", "component", "replay", "scope", scope, "totalEvents", total)
 	start := time.Now().UTC()
 
 	if err := r.resetReadModel(opts.AggregateID); err != nil {
 		return fmt.Errorf("reset read model: %w", err)
 	}
-	slog.Info("Replay: read model reset", "scope", scope)
+	slog.Info("Replay read model reset", "component", "replay", "scope", scope)
 
 	var processed int64
 	err = r.reader.StreamEvents(ctx, opts.AggregateID, func(ev ReplayEvent) error {
@@ -70,6 +72,7 @@ func (r *Replayer) Run(ctx context.Context, opts ReplayOptions) error {
 				ev.EventType, ev.AggregateID, ev.Version, ev.EventID, err)
 		}
 		processed++
+		observability.DefaultMetrics.ReplayEventsProcessed.Add(1)
 		// Lightweight progress pulse — every 500 events or whenever we hit
 		// the total, whichever comes first.
 		if processed%500 == 0 || processed == total {
@@ -77,16 +80,17 @@ func (r *Replayer) Run(ctx context.Context, opts ReplayOptions) error {
 			if total > 0 {
 				progress = float64(processed) / float64(total) * 100
 			}
-			slog.Info("Replay progress", "processed", processed, "total", total, "percent", fmt.Sprintf("%.2f%%", progress))
+			slog.Info("Replay progress", "component", "replay", "scope", scope, "processed", processed, "total", total, "percent", progress)
 		}
 		return nil
 	})
 	if err != nil {
-		slog.Error("Replay FAILED", "processed", processed, "error", err)
+		observability.DefaultMetrics.ReplayFailures.Add(1)
+		slog.Error("Replay failed", "component", "replay", "scope", scope, "processed", processed, "error", err)
 		return err
 	}
 
-	slog.Info("Replay completed", "scope", scope, "events", processed, "duration", time.Since(start))
+	slog.Info("Replay completed", "component", "replay", "scope", scope, "events", processed, "duration", time.Since(start))
 	return nil
 }
 

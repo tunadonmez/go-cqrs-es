@@ -128,31 +128,50 @@ Commands keep their own identifier contract (`IdentifiedCommand`) and remain unc
 
 ## Observability
 
-The system includes built-in observability features to monitor health, performance, and internal state.
+The system includes lightweight built-in observability for the critical runtime paths. It is intentionally simple: structured JSON logs, minimal health/readiness endpoints, and process-local JSON counters.
 
 ### Structured Logging
-All services use structured JSON logging via `log/slog` from the Go standard library. Logs include critical identifiers like `aggregateId`, `eventId`, and `type` to allow for easy tracing of events through the system.
+Both services use structured JSON logging via `log/slog`. The logger is tagged with the service name (`wallet-cmd` or `wallet-query`), and critical execution paths log stable identifiers where available:
+
+- commands: `commandType`, `commandId`, `aggregateId`
+- events: `eventType`, `eventId`, `aggregateId`, `aggregateType`, `version`
+- Kafka consumer: `topic`, `groupId`, `partition`, `offset`, `eventId`, `eventType`
+- replay: `scope`, processed counts, duration
+
+Important flows currently covered:
+
+- command received, handling started, handled, failed
+- event persisted / persistence failed
+- outbox publish attempt / published / failed
+- Kafka message consumed / decode failure / handler failure
+- projection applied / duplicate skipped / projection failed
+- replay started / progress / completed / failed
 
 ### Health & Readiness Endpoints
 Both `wallet-cmd` and `wallet-query` expose health and readiness checks:
 - `GET /health`: Returns `200 OK` with `{"status": "UP"}` if the service is running.
-- `GET /ready`: Returns `200 OK` if the service is connected to its dependencies (MongoDB for `wallet-cmd`, PostgreSQL for `wallet-query`).
+- `GET /ready`: Returns `200 OK` if the service can still reach its primary dependency (MongoDB for `wallet-cmd`, PostgreSQL for `wallet-query`). Readiness uses short dependency pings rather than deep application probes.
 
 ### Lightweight Metrics
-A simple metrics system tracks internal counts:
-- `GET /metrics`: Returns JSON containing:
-    - `commands_received`: Total commands handled by the write side.
-    - `produced_events`: Total events successfully published to Kafka.
-    - `produce_failures`: Total Kafka publication failures.
-    - `processed_events`: Total events successfully projected to the read model.
-    - `skipped_events`: Total duplicate events detected and skipped by the inbox.
-    - `failed_events`: Total projection execution failures.
+A simple in-memory counter set is exposed at `GET /metrics` as JSON. These counters are process-local snapshots, not Prometheus metrics and not cluster-wide aggregates.
+
+The snapshot includes the original counters plus a few extra operational counters:
+
+- `commands_received`, `commands_succeeded`, `command_failures`
+- `events_persisted`, `event_persist_failures`
+- `outbox_publish_attempts`, `produced_events`, `produce_failures`
+- `kafka_messages_consumed`, `kafka_message_failures`
+- `projection_attempts`, `processed_events`, `skipped_events`, `failed_events`
+- `replay_runs`, `replay_failures`, `replay_events_processed`
 
 ### Replay Observability
-The replay process provides clear progress logging:
-- Start and completion logs with duration.
-- Progress updates every 500 events (or at 100% completion) including percentage and event counts.
-- Detailed error logging if a projection fails during replay.
+The replay process logs:
+
+- start with replay scope and total event count
+- read-model reset confirmation
+- progress every 500 events, plus the final event
+- completion with duration
+- failure with processed count and the projection error context
 
 ## Getting Started
 

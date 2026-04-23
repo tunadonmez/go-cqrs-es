@@ -7,6 +7,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
+	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
 )
 
 const eventsTopic = "WalletEvents"
@@ -49,31 +50,51 @@ func (c *WalletEventConsumer) consume(ctx context.Context, topic string) {
 	})
 	defer r.Close()
 
-	slog.Info("Kafka consumer started", "topic", topic, "groupId", c.groupID)
+	slog.Info("Kafka consumer started", "component", "kafka-consumer", "topic", topic, "groupId", c.groupID)
 	for {
 		m, err := r.ReadMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return // context cancelled
 			}
-			slog.Error("Error reading from Kafka", "topic", topic, "error", err)
+			observability.DefaultMetrics.KafkaMessageFailures.Add(1)
+			slog.Error("Kafka read failed", "component", "kafka-consumer", "topic", topic, "groupId", c.groupID, "error", err)
 			continue
 		}
 
 		var envelope kafkaEnvelope
 		if err := json.Unmarshal(m.Value, &envelope); err != nil {
-			slog.Error("Failed to unmarshal envelope", "topic", topic, "error", err)
+			observability.DefaultMetrics.KafkaMessageFailures.Add(1)
+			slog.Error("Kafka envelope decode failed",
+				"component", "kafka-consumer",
+				"topic", topic,
+				"groupId", c.groupID,
+				"partition", m.Partition,
+				"offset", m.Offset,
+				"error", err)
 			continue
 		}
 
-		slog.Debug("Kafka message received", "eventId", envelope.EventID, "type", envelope.Type)
+		observability.DefaultMetrics.KafkaMessagesConsumed.Add(1)
+		slog.Info("Kafka message consumed",
+			"component", "kafka-consumer",
+			"topic", topic,
+			"groupId", c.groupID,
+			"partition", m.Partition,
+			"offset", m.Offset,
+			"eventId", envelope.EventID,
+			"eventType", envelope.Type)
 
 		if err := c.dispatch(envelope); err != nil {
 			// Leave the event unprocessed; Kafka will redeliver on restart or
 			// rebalance. The inbox makes duplicate deliveries safe.
-			slog.Error("Error handling event",
+			observability.DefaultMetrics.KafkaMessageFailures.Add(1)
+			slog.Error("Kafka message handling failed",
+				"component", "kafka-consumer",
+				"topic", topic,
+				"groupId", c.groupID,
 				"eventId", envelope.EventID,
-				"type", envelope.Type,
+				"eventType", envelope.Type,
 				"error", err)
 		}
 	}
@@ -106,7 +127,8 @@ func (c *WalletEventConsumer) dispatch(envelope kafkaEnvelope) error {
 		return c.eventHandler.OnWalletDebited(&event)
 
 	default:
-		slog.Warn("Unknown event type", "type", envelope.Type)
+		observability.DefaultMetrics.KafkaMessageFailures.Add(1)
+		slog.Warn("Kafka event type is unknown", "component", "kafka-consumer", "eventType", envelope.Type, "eventId", envelope.EventID)
 		return nil
 	}
 }

@@ -121,6 +121,7 @@ func (h *WalletEventHandler) applyIdempotent(event corevents.BaseEvent, apply fu
 	if event.GetEventID() == "" {
 		return errors.New("event is missing event id — cannot apply idempotently")
 	}
+	observability.DefaultMetrics.ProjectionAttempts.Add(1)
 	return h.repository.db.Transaction(func(tx *gorm.DB) error {
 		record := &ProcessedEvent{
 			EventID:     event.GetEventID(),
@@ -131,25 +132,44 @@ func (h *WalletEventHandler) applyIdempotent(event corevents.BaseEvent, apply fu
 		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(record)
 		if res.Error != nil {
+			observability.DefaultMetrics.FailedEvents.Add(1)
+			slog.Error("Projection inbox insert failed",
+				"component", "projection",
+				"eventId", event.GetEventID(),
+				"eventType", event.EventTypeName(),
+				"aggregateId", event.GetAggregateID(),
+				"version", event.GetVersion(),
+				"error", res.Error)
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			slog.Info("projection: skipping duplicate event",
+			slog.Info("Projection duplicate skipped",
+				"component", "projection",
 				"eventId", event.GetEventID(),
-				"type", event.EventTypeName(),
-				"aggregateId", event.GetAggregateID())
+				"eventType", event.EventTypeName(),
+				"aggregateId", event.GetAggregateID(),
+				"version", event.GetVersion())
 			observability.DefaultMetrics.SkippedEvents.Add(1)
 			return nil
 		}
 		if err := apply(tx); err != nil {
 			observability.DefaultMetrics.FailedEvents.Add(1)
+			slog.Error("Projection failed",
+				"component", "projection",
+				"eventId", event.GetEventID(),
+				"eventType", event.EventTypeName(),
+				"aggregateId", event.GetAggregateID(),
+				"version", event.GetVersion(),
+				"error", err)
 			return err
 		}
 		observability.DefaultMetrics.ProcessedEvents.Add(1)
 		slog.Info("Projection applied",
+			"component", "projection",
 			"eventId", event.GetEventID(),
-			"type", event.EventTypeName(),
-			"aggregateId", event.GetAggregateID())
+			"eventType", event.EventTypeName(),
+			"aggregateId", event.GetAggregateID(),
+			"version", event.GetVersion())
 		return nil
 	})
 }

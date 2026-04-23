@@ -8,6 +8,7 @@ import (
 
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 	"github.com/tunadonmez/go-cqrs-es/wallet-cmd/domain"
+	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
 )
 
 // EventsTopic is the Kafka topic all wallet events are published to.
@@ -66,17 +67,22 @@ func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseE
 		}
 
 		if _, err := s.repository.Save(model); err != nil {
-			slog.Error("Failed to save event to store",
+			observability.DefaultMetrics.EventPersistFailures.Add(1)
+			slog.Error("Event persistence failed",
 				"aggregateId", aggregateID,
 				"eventId", event.GetEventID(),
-				"type", event.EventTypeName(),
+				"aggregateType", model.AggregateType,
+				"eventType", event.EventTypeName(),
+				"version", version,
 				"error", err)
 			return err
 		}
-		slog.Info("Event persisted to event store",
+		observability.DefaultMetrics.EventsPersisted.Add(1)
+		slog.Info("Event persisted",
 			"aggregateId", aggregateID,
 			"eventId", event.GetEventID(),
-			"type", event.EventTypeName(),
+			"aggregateType", model.AggregateType,
+			"eventType", event.EventTypeName(),
 			"version", version)
 	}
 	return nil

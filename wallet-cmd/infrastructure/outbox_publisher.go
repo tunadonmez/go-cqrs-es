@@ -52,7 +52,7 @@ func (p *OutboxPublisher) Start(ctx context.Context) {
 }
 
 func (p *OutboxPublisher) loop(ctx context.Context) {
-	slog.Info("Outbox publisher started", "topic", p.topic, "interval", p.interval, "batchSize", p.batchSize)
+	slog.Info("Outbox publisher started", "component", "outbox", "topic", p.topic, "interval", p.interval, "batchSize", p.batchSize)
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 	for {
@@ -74,20 +74,14 @@ func (p *OutboxPublisher) drain(ctx context.Context) {
 		}
 		pending, err := p.repository.FindPendingOutbox(ctx, p.batchSize)
 		if err != nil {
-			slog.Error("outbox: load pending failed", "error", err)
+			slog.Error("Outbox pending load failed", "component", "outbox", "error", err)
 			return
 		}
 		if len(pending) == 0 {
 			return
 		}
-		slog.Debug("outbox: processing batch", "count", len(pending))
 		for _, entry := range pending {
 			if err := p.publishEntry(ctx, entry); err != nil {
-				slog.Error("outbox: publish failed",
-					"eventId", entry.EventID,
-					"type", entry.EventType,
-					"aggregateId", entry.AggregateIdentifier,
-					"error", err)
 				// Stop the batch early: publishing further events for the same
 				// aggregate before a retry would violate per-aggregate ordering.
 				return
@@ -100,21 +94,59 @@ func (p *OutboxPublisher) drain(ctx context.Context) {
 }
 
 func (p *OutboxPublisher) publishEntry(ctx context.Context, entry *EventModelDoc) error {
+	observability.DefaultMetrics.OutboxPublishAttempts.Add(1)
+	slog.Info("Outbox publish attempt",
+		"component", "outbox",
+		"topic", p.topic,
+		"eventId", entry.EventID,
+		"eventType", entry.EventType,
+		"aggregateId", entry.AggregateIdentifier,
+		"aggregateType", entry.AggregateType,
+		"version", entry.Version,
+		"attempt", entry.Attempts+1)
 	if err := p.producer.Produce(p.topic, entry.EventData); err != nil {
 		observability.DefaultMetrics.ProduceFailures.Add(1)
 		if recErr := p.repository.RecordPublishFailure(ctx, entry.ID, time.Now().UTC(), err); recErr != nil {
-			slog.Error("outbox: failed to record failure", "eventId", entry.EventID, "error", recErr)
+			slog.Error("Outbox publish failure could not be recorded",
+				"component", "outbox",
+				"eventId", entry.EventID,
+				"eventType", entry.EventType,
+				"aggregateId", entry.AggregateIdentifier,
+				"error", recErr)
 		}
+		slog.Error("Outbox publish failed",
+			"component", "outbox",
+			"topic", p.topic,
+			"eventId", entry.EventID,
+			"eventType", entry.EventType,
+			"aggregateId", entry.AggregateIdentifier,
+			"aggregateType", entry.AggregateType,
+			"version", entry.Version,
+			"attempt", entry.Attempts+1,
+			"error", err)
 		return err
 	}
 	if err := p.repository.MarkPublished(ctx, entry.ID, time.Now().UTC()); err != nil {
-		slog.Error("outbox: failed to mark published", "eventId", entry.EventID, "error", err)
+		observability.DefaultMetrics.ProduceFailures.Add(1)
+		slog.Error("Outbox published event could not be marked",
+			"component", "outbox",
+			"topic", p.topic,
+			"eventId", entry.EventID,
+			"eventType", entry.EventType,
+			"aggregateId", entry.AggregateIdentifier,
+			"aggregateType", entry.AggregateType,
+			"version", entry.Version,
+			"error", err)
 		return err
 	}
 	observability.DefaultMetrics.ProducedEvents.Add(1)
-	slog.Info("Outbox event published to Kafka",
+	slog.Info("Outbox event published",
+		"component", "outbox",
+		"topic", p.topic,
 		"eventId", entry.EventID,
-		"type", entry.EventType,
-		"aggregateId", entry.AggregateIdentifier)
+		"eventType", entry.EventType,
+		"aggregateId", entry.AggregateIdentifier,
+		"aggregateType", entry.AggregateType,
+		"version", entry.Version)
 	return nil
 }

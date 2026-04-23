@@ -26,7 +26,7 @@ import (
 
 func main() {
 	// Initialize slog
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "wallet-cmd")
 	slog.SetDefault(logger)
 
 	cfg := config.Load()
@@ -67,8 +67,16 @@ func main() {
 	cmdDispatcher := coreinfra.NewCommandDispatcher()
 	// Logging & Metrics middleware
 	cmdDispatcher.Use(func(cmd interface{}) error {
+		commandType := reflect.TypeOf(cmd)
+		if commandType.Kind() == reflect.Ptr {
+			commandType = commandType.Elem()
+		}
+		attrs := []any{"commandType", commandType.Name()}
+		if identified, ok := cmd.(corecommands.IdentifiedCommand); ok {
+			attrs = append(attrs, "commandId", identified.GetID())
+		}
 		observability.DefaultMetrics.CommandsReceived.Add(1)
-		slog.Info("Command received", "type", reflect.TypeOf(cmd).Elem().Name())
+		slog.Info("Command received", attrs...)
 		return nil
 	})
 	cmdDispatcher.Use(func(cmd interface{}) error {
@@ -102,8 +110,9 @@ func main() {
 		c.JSON(200, gin.H{"status": "UP"})
 	})
 	r.GET("/ready", func(c *gin.Context) {
-		// Basic check: can we ping Mongo?
-		if err := client.Ping(context.Background(), nil); err != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := client.Ping(ctx, nil); err != nil {
 			c.JSON(503, gin.H{"status": "DOWN", "reason": "mongodb unavailable"})
 			return
 		}

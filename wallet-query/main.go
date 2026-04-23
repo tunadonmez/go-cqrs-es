@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tunadonmez/go-cqrs-es/wallet-common/observability"
@@ -27,7 +28,7 @@ import (
 
 func main() {
 	// Initialize slog
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "wallet-query")
 	slog.SetDefault(logger)
 
 	// CLI flags
@@ -93,7 +94,9 @@ func main() {
 			c.JSON(503, gin.H{"status": "DOWN", "reason": "database error"})
 			return
 		}
-		if err := sqlDB.Ping(); err != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := sqlDB.PingContext(ctx); err != nil {
 			c.JSON(503, gin.H{"status": "DOWN", "reason": "database unavailable"})
 			return
 		}
