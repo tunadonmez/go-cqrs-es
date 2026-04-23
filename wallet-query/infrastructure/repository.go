@@ -1,6 +1,9 @@
 package infrastructure
 
 import (
+	"strings"
+
+	"github.com/tunadonmez/go-cqrs-es/wallet-query/api/queries"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/domain"
 	"gorm.io/gorm"
 )
@@ -26,9 +29,18 @@ func (r *WalletRepository) FindWalletByID(id string) (*domain.Wallet, error) {
 	return &wallet, nil
 }
 
-func (r *WalletRepository) FindAllWallets() ([]*domain.Wallet, error) {
+func (r *WalletRepository) FindAllWallets(q queries.FindAllWalletsQuery) ([]*domain.Wallet, error) {
 	var wallets []*domain.Wallet
-	if err := r.db.Order("created_at asc").Find(&wallets).Error; err != nil {
+	db := r.db.Model(&domain.Wallet{})
+	if q.Currency != "" {
+		db = db.Where("currency = ?", strings.ToUpper(strings.TrimSpace(q.Currency)))
+	}
+	orderBy := walletSortColumn(q.SortBy) + " " + q.SortOrder
+	offset := (q.Page - 1) * q.PageSize
+	if err := db.Order(orderBy).
+		Limit(q.PageSize + 1).
+		Offset(offset).
+		Find(&wallets).Error; err != nil {
 		return nil, err
 	}
 	return wallets, nil
@@ -38,13 +50,48 @@ func (r *WalletRepository) SaveTransaction(transaction *domain.Transaction) erro
 	return r.db.Save(transaction).Error
 }
 
-func (r *WalletRepository) FindTransactionsByWalletID(walletID string) ([]*domain.Transaction, error) {
+func (r *WalletRepository) FindTransactionsByWalletID(q queries.FindWalletTransactionsQuery) ([]*domain.Transaction, error) {
 	var transactions []*domain.Transaction
-	if err := r.db.Where("wallet_id = ?", walletID).
-		Order("occurred_at asc").
-		Order("event_version asc").
+	db := r.db.Where("wallet_id = ?", q.WalletID)
+	if q.Type != "" {
+		db = db.Where("type = ?", q.Type)
+	}
+	if q.OccurredFrom != nil {
+		db = db.Where("occurred_at >= ?", q.OccurredFrom.UTC())
+	}
+	if q.OccurredTo != nil {
+		db = db.Where("occurred_at <= ?", q.OccurredTo.UTC())
+	}
+	orderBy := transactionSortColumn(q.SortBy) + " " + q.SortOrder
+	offset := (q.Page - 1) * q.PageSize
+	if err := db.Order(orderBy).
+		Order("event_version " + q.SortOrder).
+		Limit(q.PageSize + 1).
+		Offset(offset).
 		Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 	return transactions, nil
+}
+
+func walletSortColumn(sortBy string) string {
+	switch sortBy {
+	case "balance":
+		return "balance"
+	case "owner":
+		return "owner"
+	default:
+		return "created_at"
+	}
+}
+
+func transactionSortColumn(sortBy string) string {
+	switch sortBy {
+	case "amount":
+		return "amount"
+	case "eventVersion":
+		return "event_version"
+	default:
+		return "occurred_at"
+	}
 }

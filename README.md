@@ -353,6 +353,52 @@ POST /api/v1/wallets/:id/transfer
 | `GET`  | `/api/v1/wallets/:id/balance`      | Get wallet balance            |
 | `GET`  | `/api/v1/wallets/:id/transactions` | Get wallet transaction history |
 
+#### Wallet list query parameters
+
+`GET /api/v1/wallets` now supports simple pagination, filtering, and sorting:
+
+- `page`: 1-based page number. Default `1`.
+- `pageSize`: page size. Default `20`, max `100`.
+- `sortBy`: `createdAt`, `balance`, or `owner`. Default `createdAt`.
+- `sortOrder`: `asc` or `desc`. Default `asc`.
+- `currency`: exact wallet currency filter, for example `USD`.
+
+Example requests:
+
+```http
+GET /api/v1/wallets?page=1&pageSize=10
+GET /api/v1/wallets?currency=USD&sortBy=balance&sortOrder=desc&page=2&pageSize=5
+```
+
+List responses now include a `pagination` object alongside the existing `wallets` array. The response body stays backward-compatible for existing clients that only read `wallets`.
+
+#### Wallet transaction history query parameters
+
+`GET /api/v1/wallets/:id/transactions` now supports:
+
+- `page`: 1-based page number. Default `1`.
+- `pageSize`: page size. Default `20`, max `100`.
+- `sortBy`: `occurredAt`, `eventVersion`, or `amount`. Default `occurredAt`.
+- `sortOrder`: `asc` or `desc`. Default `asc`.
+- `type`: `OPENING_BALANCE`, `CREDIT`, `DEBIT`, `TRANSFER_IN`, or `TRANSFER_OUT`.
+- `occurredFrom`: inclusive lower bound for `occurredAt`. Accepts RFC3339 or `YYYY-MM-DD`.
+- `occurredTo`: inclusive upper bound for `occurredAt`. Accepts RFC3339 or `YYYY-MM-DD`.
+
+Example requests:
+
+```http
+GET /api/v1/wallets/wallet-123/transactions?page=1&pageSize=25
+GET /api/v1/wallets/wallet-123/transactions?type=DEBIT&sortBy=amount&sortOrder=desc
+GET /api/v1/wallets/wallet-123/transactions?occurredFrom=2026-04-01&occurredTo=2026-04-30
+GET /api/v1/wallets/wallet-123/transactions?type=TRANSFER_OUT&occurredFrom=2026-04-01T00:00:00Z&sortBy=occurredAt&sortOrder=desc
+```
+
+Transaction history responses now include:
+
+- `transactions`: the existing transaction array
+- `pagination`: page/pageSize/sort metadata plus `hasMore`
+- `filters`: the applied transaction filter values
+
 ### Response Codes
 
 - **204** — No results found

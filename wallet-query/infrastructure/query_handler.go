@@ -15,7 +15,10 @@ func NewWalletQueryHandler(repo *WalletRepository) *WalletQueryHandler {
 }
 
 func (h *WalletQueryHandler) HandleFindAll(q queries.FindAllWalletsQuery) ([]coredomain.BaseEntity, error) {
-	wallets, err := h.repository.FindAllWallets()
+	q.Page = queries.NormalizePage(q.Page)
+	q.PageSize = queries.NormalizePageSize(q.PageSize)
+	q.SortBy, q.SortOrder = queries.NormalizeWalletSort(q.SortBy, q.SortOrder)
+	wallets, err := h.repository.FindAllWallets(q)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +38,10 @@ func (h *WalletQueryHandler) HandleFindByID(q queries.FindWalletByIDQuery) ([]co
 }
 
 func (h *WalletQueryHandler) HandleFindTransactions(q queries.FindWalletTransactionsQuery) ([]coredomain.BaseEntity, error) {
-	transactions, err := h.repository.FindTransactionsByWalletID(q.WalletID)
+	q.Page = queries.NormalizePage(q.Page)
+	q.PageSize = queries.NormalizePageSize(q.PageSize)
+	q.SortBy, q.SortOrder = queries.NormalizeTransactionSort(q.SortBy, q.SortOrder)
+	transactions, err := h.repository.FindTransactionsByWalletID(q)
 	if err != nil {
 		return nil, err
 	}
