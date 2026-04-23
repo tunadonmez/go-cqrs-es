@@ -15,7 +15,6 @@ import (
 	"github.com/tunadonmez/go-cqrs-es/account-cmd/infrastructure"
 
 	// Trigger event registration via init()
-	_ "github.com/tunadonmez/go-cqrs-es/account-common/events"
 	corecommands "github.com/tunadonmez/go-cqrs-es/cqrs-core/commands"
 	coreinfra "github.com/tunadonmez/go-cqrs-es/cqrs-core/infrastructure"
 	coreproducers "github.com/tunadonmez/go-cqrs-es/cqrs-core/producers"

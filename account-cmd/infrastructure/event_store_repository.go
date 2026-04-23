@@ -8,6 +8,7 @@ import (
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 const collection = "eventStore"
@@ -48,7 +49,8 @@ func (r *EventStoreRepository) FindByAggregateIdentifier(aggregateID string) ([]
 	defer cancel()
 
 	filter := bson.M{"aggregateIdentifier": aggregateID}
-	cursor, err := r.db.Collection(collection).Find(ctx, filter)
+	findOpts := options.Find().SetSort(bson.D{{Key: "version", Value: 1}})
+	cursor, err := r.db.Collection(collection).Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, err
 	}

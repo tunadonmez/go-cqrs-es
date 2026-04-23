@@ -16,9 +16,13 @@ func NewAccountEventSourcingHandler(es coreinfra.EventStore) *AccountEventSourci
 }
 
 func (h *AccountEventSourcingHandler) Save(aggregate *domain.AccountAggregate) error {
-	err := h.eventStore.SaveEvents(aggregate.ID, aggregate.GetUncommittedChanges(), aggregate.Version)
+	changes := aggregate.GetUncommittedChanges()
+	err := h.eventStore.SaveEvents(aggregate.ID, changes, aggregate.Version)
 	if err != nil {
 		return err
+	}
+	if len(changes) > 0 {
+		aggregate.Version = changes[len(changes)-1].GetVersion()
 	}
 	aggregate.MarkChangesAsCommitted()
 	return nil

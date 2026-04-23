@@ -5,8 +5,8 @@ go 1.26.1
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/segmentio/kafka-go v0.4.47
-	github.com/tunadonmez/go-cqrs-es/account-common v0.0.0
-	github.com/tunadonmez/go-cqrs-es/cqrs-core v0.0.0
+	github.com/tunadonmez/go-cqrs-es/account-common v0.1.0
+	github.com/tunadonmez/go-cqrs-es/cqrs-core v0.1.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.11
 )
@@ -45,9 +45,4 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-replace (
-	github.com/tunadonmez/go-cqrs-es/account-common => ../account-common
-	github.com/tunadonmez/go-cqrs-es/cqrs-core => ../cqrs-core
 )

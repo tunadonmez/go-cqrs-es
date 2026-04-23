@@ -47,8 +47,8 @@ func (a *AggregateRoot) RaiseEvent(self interface{}, event events.BaseEvent) {
 	a.ApplyChange(self, event, true)
 }
 
-func (a *AggregateRoot) ReplayEvents(self interface{}, evts []events.BaseEvent) {
-	for _, event := range evts {
+func (a *AggregateRoot) ReplayEvents(self interface{}, events []events.BaseEvent) {
+	for _, event := range events {
 		a.ApplyChange(self, event, false)
 	}
 }
