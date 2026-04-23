@@ -25,6 +25,9 @@ type Metrics struct {
 	ReplayEventsProcessed  atomic.Int64
 	DeadLetteredEvents     atomic.Int64
 	DeadLetterSaveFailures atomic.Int64
+	SnapshotsLoaded        atomic.Int64
+	SnapshotsCreated       atomic.Int64
+	SnapshotFullReplays    atomic.Int64
 }
 
 var DefaultMetrics = &Metrics{}
@@ -51,5 +54,8 @@ func (m *Metrics) Snapshot() map[string]int64 {
 		"replay_events_processed":   m.ReplayEventsProcessed.Load(),
 		"dead_lettered_events":      m.DeadLetteredEvents.Load(),
 		"dead_letter_save_failures": m.DeadLetterSaveFailures.Load(),
+		"snapshots_loaded":          m.SnapshotsLoaded.Load(),
+		"snapshots_created":         m.SnapshotsCreated.Load(),
+		"snapshot_full_replays":     m.SnapshotFullReplays.Load(),
 	}
 }

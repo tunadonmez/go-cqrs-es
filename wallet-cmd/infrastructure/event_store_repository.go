@@ -11,7 +11,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const collection = "eventStore"
+const (
+	collection         = "eventStore"
+	snapshotCollection = "snapshots"
+)
 
 // Outbox publish states carried inline on each event document.
 const (
@@ -67,10 +70,17 @@ type EventModelDoc struct {
 }
 
 func (r *EventStoreRepository) FindByAggregateIdentifier(aggregateID string) ([]*EventModelDoc, error) {
+	return r.FindByAggregateIdentifierAfterVersion(aggregateID, -1)
+}
+
+func (r *EventStoreRepository) FindByAggregateIdentifierAfterVersion(aggregateID string, afterVersion int) ([]*EventModelDoc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	filter := bson.M{"aggregateIdentifier": aggregateID}
+	if afterVersion >= 0 {
+		filter["version"] = bson.M{"$gt": afterVersion}
+	}
 	findOpts := options.Find().SetSort(bson.D{{Key: "version", Value: 1}})
 	cursor, err := r.db.Collection(collection).Find(ctx, filter, findOpts)
 	if err != nil {
@@ -92,6 +102,62 @@ func (r *EventStoreRepository) FindByAggregateIdentifier(aggregateID string) ([]
 		results = append(results, model)
 	}
 	return results, nil
+}
+
+type snapshotDoc struct {
+	AggregateIdentifier string      `bson:"aggregateIdentifier"`
+	AggregateType       string      `bson:"aggregateType"`
+	Version             int         `bson:"version"`
+	State               interface{} `bson:"state"`
+	UpdatedAt           time.Time   `bson:"updatedAt"`
+}
+
+type rawSnapshotDoc struct {
+	AggregateIdentifier string    `bson:"aggregateIdentifier"`
+	AggregateType       string    `bson:"aggregateType"`
+	Version             int       `bson:"version"`
+	State               bson.Raw  `bson:"state"`
+	UpdatedAt           time.Time `bson:"updatedAt"`
+}
+
+func (r *EventStoreRepository) LoadLatestSnapshot(aggregateID string, target interface{}) (bool, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var raw rawSnapshotDoc
+	err := r.db.Collection(snapshotCollection).FindOne(ctx, bson.M{
+		"aggregateIdentifier": aggregateID,
+	}).Decode(&raw)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return false, -1, nil
+		}
+		return false, -1, err
+	}
+	if err := bson.Unmarshal(raw.State, target); err != nil {
+		return false, -1, err
+	}
+	return true, raw.Version, nil
+}
+
+func (r *EventStoreRepository) SaveSnapshot(aggregateID, aggregateType string, version int, state interface{}) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	doc := snapshotDoc{
+		AggregateIdentifier: aggregateID,
+		AggregateType:       aggregateType,
+		Version:             version,
+		State:               state,
+		UpdatedAt:           time.Now().UTC(),
+	}
+	_, err := r.db.Collection(snapshotCollection).UpdateOne(
+		ctx,
+		bson.M{"aggregateIdentifier": aggregateID},
+		bson.M{"$set": doc},
+		options.UpdateOne().SetUpsert(true),
+	)
+	return err
 }
 
 // storableEventDoc is the shape written to MongoDB (EventData as interface{} for BSON encoding).

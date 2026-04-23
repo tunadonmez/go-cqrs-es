@@ -15,6 +15,16 @@ HTTP
           → EventStore (MongoDB, single atomic write per event: event + PENDING outbox entry)
 ```
 
+**Write-side aggregate load flow:**
+
+```
+CommandHandler
+  → WalletEventSourcingHandler.GetByID
+    → load latest snapshot from MongoDB snapshots collection (if present)
+    → replay only events with version > snapshot.version
+    → fallback to full event-stream replay when no snapshot exists
+```
+
 **Asynchronous publishing (new):**
 
 ```
@@ -69,6 +79,18 @@ Events are persisted and registered for publishing in a single atomic MongoDB wr
 - `WalletEventStore.SaveEvents` no longer calls the producer. If the HTTP request returns success, the events are durable and guaranteed to be published eventually.
 - `OutboxPublisher` polls for `PENDING` entries in insertion order (by `_id`), publishes to Kafka (partition key = aggregate ID), and flips entries to `PUBLISHED` on success. On failure it increments `attempts` and leaves the entry `PENDING` for a retry on the next tick.
 - Because the publisher aborts a batch at the first failure, per-aggregate ordering is preserved even under partial Kafka outages.
+
+### Aggregate Snapshots (write side)
+
+Snapshotting reduces aggregate rehydration cost on the command side.
+
+- MongoDB remains event-sourced: the event log in `eventStore` is still the source of truth.
+- A separate MongoDB `snapshots` collection stores the latest materialized state for each wallet aggregate together with the aggregate version captured in that snapshot.
+- When `WalletEventSourcingHandler.GetByID(...)` loads an aggregate, it first tries the latest snapshot. If found, it restores the aggregate state from that snapshot and replays only events whose version is greater than the snapshot version.
+- If no snapshot exists, aggregate loading behaves exactly as before and replays the full event stream from version `0`.
+- Snapshot creation is threshold-based in the write service. The current implementation writes a fresh snapshot every 50 persisted events for a given aggregate.
+
+This keeps correctness simple: snapshots are only a cache of derived aggregate state, not a second source of truth, and the final aggregate must always match what a full replay would have produced.
 
 ### Idempotent Projections (read side)
 
@@ -205,6 +227,7 @@ The snapshot includes the original counters plus a few extra operational counter
 - `projection_attempts`, `processed_events`, `skipped_events`, `failed_events`
 - `replay_runs`, `replay_failures`, `replay_events_processed`
 - `dead_lettered_events`, `dead_letter_save_failures`
+- `snapshots_loaded`, `snapshots_created`, `snapshot_full_replays`
 
 ### Replay Observability
 The replay process logs:

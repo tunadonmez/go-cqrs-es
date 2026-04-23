@@ -20,10 +20,42 @@ type WalletAggregate struct {
 	balance   float64
 }
 
+// WalletAggregateSnapshot captures the write-side aggregate state at a specific
+// version. It is an optimization for rehydration only; events remain the source
+// of truth.
+type WalletAggregateSnapshot struct {
+	AggregateID string    `bson:"aggregateIdentifier"`
+	Version     int       `bson:"version"`
+	Owner       string    `bson:"owner"`
+	Currency    string    `bson:"currency"`
+	CreatedAt   time.Time `bson:"createdAt"`
+	Balance     float64   `bson:"balance"`
+}
+
 func NewWalletAggregate() *WalletAggregate {
 	return &WalletAggregate{
 		AggregateRoot: *coredomain.NewAggregateRoot(),
 	}
+}
+
+func (w *WalletAggregate) Snapshot() WalletAggregateSnapshot {
+	return WalletAggregateSnapshot{
+		AggregateID: w.ID,
+		Version:     w.Version,
+		Owner:       w.owner,
+		Currency:    w.currency,
+		CreatedAt:   w.createdAt,
+		Balance:     w.balance,
+	}
+}
+
+func (w *WalletAggregate) Restore(snapshot WalletAggregateSnapshot) {
+	w.ID = snapshot.AggregateID
+	w.Version = snapshot.Version
+	w.owner = snapshot.Owner
+	w.currency = snapshot.Currency
+	w.createdAt = snapshot.CreatedAt
+	w.balance = snapshot.Balance
 }
 
 func NewWalletAggregateFromCommand(cmd *commands.CreateWalletCommand) (*WalletAggregate, error) {
