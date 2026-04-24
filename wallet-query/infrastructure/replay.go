@@ -19,16 +19,18 @@ import (
 // that the live Kafka consumer uses. There is only one projection path —
 // applyIdempotent — and both live consumption and replay go through it.
 type Replayer struct {
-	reader       *EventSourceReader
-	eventHandler *WalletEventHandler
-	db           *gorm.DB
+	reader            *EventSourceReader
+	eventHandler      *WalletEventHandler
+	projectionManager *ProjectionVersionManager
+	db                *gorm.DB
 }
 
-func NewReplayer(reader *EventSourceReader, handler *WalletEventHandler, db *gorm.DB) *Replayer {
+func NewReplayer(reader *EventSourceReader, handler *WalletEventHandler, projectionManager *ProjectionVersionManager, db *gorm.DB) *Replayer {
 	return &Replayer{
-		reader:       reader,
-		eventHandler: handler,
-		db:           db,
+		reader:            reader,
+		eventHandler:      handler,
+		projectionManager: projectionManager,
+		db:                db,
 	}
 }
 
@@ -88,6 +90,18 @@ func (r *Replayer) Run(ctx context.Context, opts ReplayOptions) error {
 		observability.DefaultMetrics.ReplayFailures.Add(1)
 		slog.Error("Replay failed", "component", "replay", "scope", scope, "processed", processed, "error", err)
 		return err
+	}
+
+	if opts.AggregateID == "" && r.projectionManager != nil {
+		if err := r.projectionManager.MarkReplayComplete(); err != nil {
+			observability.DefaultMetrics.ReplayFailures.Add(1)
+			slog.Error("Replay completed but projection version update failed",
+				"component", "replay",
+				"scope", scope,
+				"events", processed,
+				"error", err)
+			return err
+		}
 	}
 
 	slog.Info("Replay completed", "component", "replay", "scope", scope, "events", processed, "duration", time.Since(start))

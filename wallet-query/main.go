@@ -64,6 +64,7 @@ func main() {
 		&domain.Transaction{},
 		&infrastructure.ProcessedEvent{},
 		&infrastructure.DeadLetterEvent{},
+		&infrastructure.ProjectionVersion{},
 	); err != nil {
 		slog.Error("AutoMigrate error", "error", err)
 		os.Exit(1)
@@ -74,9 +75,19 @@ func main() {
 	eventHandler := infrastructure.NewWalletEventHandler(repo)
 	deadLetters := infrastructure.NewDeadLetterRepository(db)
 	deadLetterReprocessor := infrastructure.NewDeadLetterReprocessor(deadLetters, eventHandler)
+	projectionVersions := infrastructure.NewProjectionVersionRepository(db)
+	projectionVersionManager := infrastructure.NewProjectionVersionManager(
+		projectionVersions,
+		infrastructure.DefinedProjectionVersions,
+	)
+
+	if err := projectionVersionManager.CheckStartup(); err != nil {
+		slog.Error("Projection version startup check failed", "error", err)
+		os.Exit(1)
+	}
 
 	if *replayFlag {
-		runReplay(cfg, db, eventHandler, *aggregateFlag)
+		runReplay(cfg, db, eventHandler, projectionVersionManager, *aggregateFlag)
 		return
 	}
 	if *reprocessDeadLetterFlag != "" {
@@ -180,7 +191,13 @@ func isAllowedOrigin(origin string) bool {
 // runReplay performs a one-shot rebuild of the read model from the event
 // store. It never touches Kafka and reuses the live WalletEventHandler so
 // there is only one projection path in the codebase.
-func runReplay(cfg config.Config, db *gorm.DB, handler *infrastructure.WalletEventHandler, aggregateID string) {
+func runReplay(
+	cfg config.Config,
+	db *gorm.DB,
+	handler *infrastructure.WalletEventHandler,
+	projectionVersionManager *infrastructure.ProjectionVersionManager,
+	aggregateID string,
+) {
 	ctx := context.Background()
 
 	reader, err := infrastructure.NewEventSourceReader(ctx, cfg.MongoURI, cfg.MongoDB)
@@ -194,7 +211,7 @@ func runReplay(cfg config.Config, db *gorm.DB, handler *infrastructure.WalletEve
 		}
 	}()
 
-	replayer := infrastructure.NewReplayer(reader, handler, db)
+	replayer := infrastructure.NewReplayer(reader, handler, projectionVersionManager, db)
 	if err := replayer.Run(ctx, infrastructure.ReplayOptions{AggregateID: aggregateID}); err != nil {
 		slog.Error("replay failed", "error", err)
 		os.Exit(1)

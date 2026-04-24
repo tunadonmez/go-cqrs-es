@@ -153,6 +153,19 @@ The projection pipeline is safe under at-least-once delivery.
 - Projections run inside a single DB transaction that first `INSERT … ON CONFLICT DO NOTHING` into `processed_events`. If the insert affects zero rows, the event is a duplicate and the projection body is skipped entirely.
 - Projection writes and inbox writes commit together, so a crash between the two is impossible.
 
+### Projection Versioning
+
+The query side now tracks which version of projection logic produced the current PostgreSQL read model.
+
+- Each projection has an explicit code-defined name and integer version.
+- The current metadata is stored in PostgreSQL `projection_versions`.
+- On startup, `wallet-query` compares the stored version with the code version.
+- If the row is missing, it initializes it.
+- If the versions match, startup continues normally.
+- If the versions differ, the service logs a clear warning that a replay/rebuild is required.
+
+This is intentionally lightweight. It does not auto-run rebuilds or support multiple projection generations in parallel. Its job is to make projection drift visible instead of letting read-model behavior change silently.
+
 ### Retry / Dead-Letter Handling (read side)
 
 The live Kafka consumer now uses an explicit fetch/process/commit flow instead of relying on implicit offset handling.
@@ -289,6 +302,8 @@ go run . --replay --aggregate=<wallet-id>
 Replay does **not** clear `dead_letter_events`; rebuilds restore the read model, while dead-letter rows remain available for diagnosis.
 
 Replay also uses the same version-aware decoder as live Kafka consumption and dead-letter reprocessing. If an old payload needs upcasting, replay sees the same in-memory event shape the live consumer would see.
+
+After a successful full replay, `wallet-query` updates `projection_versions` to the current code-defined projection version. Aggregate-scoped replay does not update the stored version because it is not a complete rebuild of the read model.
 
 Example log output:
 
