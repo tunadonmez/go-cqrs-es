@@ -342,6 +342,25 @@ Supported query parameters:
 - `sortBy=occurredAt|createdAt`
 - `sortOrder=asc|desc`
 
+### Ledger Consistency Checker
+
+`wallet-query` now includes a read-only operational checker for the PostgreSQL read model:
+
+```bash
+cd wallet-query
+POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger port=5432 sslmode=disable TimeZone=UTC" \
+go run . --check-ledger
+```
+
+What it validates:
+
+- wallet stored balances vs balances derived from `ledger_entries`
+- transfer-derived movement groups for debit/credit balance
+- transfer counterpart pairing and amount/currency consistency
+- global debit and credit totals, with explicit warnings when external money flows make strict global balance inapplicable
+
+This checker is not a repair tool. It does not replay, rebuild, mutate ledger rows, mutate wallets, mutate transactions, mark dead letters resolved, or update projection versions. It is intended for operational verification after replay, projection changes, or dead-letter reprocessing.
+
 Example log output:
 
 ```

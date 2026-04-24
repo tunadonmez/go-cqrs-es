@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -39,11 +40,22 @@ func main() {
 		replayFlag              = flag.Bool("replay", false, "rebuild the read model from the event store, then exit")
 		aggregateFlag           = flag.String("aggregate", "", "when used with --replay, restrict the rebuild to a single aggregate id")
 		reprocessDeadLetterFlag = flag.String("reprocess-dead-letter", "", "reprocess a single dead-letter row by dead_letter_key, then exit")
+		checkLedgerFlag         = flag.Bool("check-ledger", false, "run a read-only ledger consistency check against the PostgreSQL read model, then exit")
 	)
 	flag.Parse()
 
-	if *replayFlag && *reprocessDeadLetterFlag != "" {
-		slog.Error("flags --replay and --reprocess-dead-letter are mutually exclusive")
+	selectedModes := 0
+	if *replayFlag {
+		selectedModes++
+	}
+	if *reprocessDeadLetterFlag != "" {
+		selectedModes++
+	}
+	if *checkLedgerFlag {
+		selectedModes++
+	}
+	if selectedModes > 1 {
+		slog.Error("flags --replay, --reprocess-dead-letter, and --check-ledger are mutually exclusive")
 		os.Exit(1)
 	}
 
@@ -56,6 +68,12 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("Connected to PostgreSQL")
+
+	repo := infrastructure.NewWalletRepository(db)
+	if *checkLedgerFlag {
+		runLedgerCheck(repo)
+		return
+	}
 
 	// Auto-migrate the read model, the processed-events inbox, and the
 	// operational dead-letter table used by the live Kafka consumer.
@@ -72,7 +90,6 @@ func main() {
 	}
 
 	// Wire up dependencies shared by both modes.
-	repo := infrastructure.NewWalletRepository(db)
 	eventHandler := infrastructure.NewWalletEventHandler(repo)
 	deadLetters := infrastructure.NewDeadLetterRepository(db)
 	deadLetterReprocessor := infrastructure.NewDeadLetterReprocessor(deadLetters, eventHandler)
@@ -228,4 +245,15 @@ func runDeadLetterReprocess(reprocessor *infrastructure.DeadLetterReprocessor, d
 		slog.Error("dead-letter reprocess failed", "deadLetterKey", deadLetterKey, "error", err)
 		os.Exit(1)
 	}
+}
+
+func runLedgerCheck(repo *infrastructure.WalletRepository) {
+	checker := infrastructure.NewLedgerConsistencyChecker(repo)
+	report, err := checker.Run()
+	if err != nil {
+		slog.Error("ledger consistency check failed to execute", "component", "ledger-checker", "error", err)
+		os.Exit(1)
+	}
+	_, _ = fmt.Fprintln(os.Stdout, report.String())
+	os.Exit(report.ExitCode())
 }

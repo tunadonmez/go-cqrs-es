@@ -90,6 +90,22 @@ func (r *WalletRepository) FindTransactionsByWalletID(q queries.FindWalletTransa
 	return transactions, nil
 }
 
+func (r *WalletRepository) FindAllWalletsForCheck() ([]*domain.Wallet, error) {
+	var wallets []*domain.Wallet
+	if err := r.db.Order("id asc").Find(&wallets).Error; err != nil {
+		return nil, err
+	}
+	return wallets, nil
+}
+
+func (r *WalletRepository) FindAllLedgerEntriesForCheck() ([]*domain.LedgerEntry, error) {
+	var entries []*domain.LedgerEntry
+	if err := r.db.Order("occurred_at asc").Order("id asc").Find(&entries).Error; err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
 func (r *WalletRepository) FindLedgerEntries(q queries.FindLedgerEntriesQuery) ([]*domain.LedgerEntry, error) {
 	var entries []*domain.LedgerEntry
 	db := r.db.Model(&domain.LedgerEntry{})
