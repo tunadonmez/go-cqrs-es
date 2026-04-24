@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { LedgerEntriesTable } from "@/components/ledger/ledger-entries-table";
+import { LedgerMovementsTable } from "@/components/ledger/ledger-movements-table";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { WalletSummary } from "@/components/wallets/wallet-summary";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/state";
-import { useWallet, useWalletBalance, useWalletLedgerEntries, useWalletTransactions } from "@/hooks/use-query-data";
+import { useWallet, useWalletBalance, useWalletLedgerEntries, useWalletLedgerMovements, useWalletTransactions } from "@/hooks/use-query-data";
 
 export default function WalletDetailPage() {
   const params = useParams<{ id: string }>();
@@ -41,12 +42,18 @@ export default function WalletDetailPage() {
     sortBy: "occurredAt",
     sortOrder: "desc"
   });
+  const movements = useWalletLedgerMovements(walletId, {
+    page: 1,
+    pageSize: 10,
+    sortBy: "occurredAt",
+    sortOrder: "desc"
+  });
 
-  if (wallet.isLoading || transactions.isLoading || ledger.isLoading) {
+  if (wallet.isLoading || transactions.isLoading || ledger.isLoading || movements.isLoading) {
     return <LoadingState label="Loading wallet detail..." />;
   }
 
-  if (wallet.error || transactions.error || ledger.error) {
+  if (wallet.error || transactions.error || ledger.error || movements.error) {
     return (
       <ErrorState
         title="Could not load wallet detail"
@@ -57,6 +64,8 @@ export default function WalletDetailPage() {
               ? transactions.error.message
               : ledger.error instanceof Error
                 ? ledger.error.message
+              : movements.error instanceof Error
+                ? movements.error.message
               : "Unknown wallet detail failure."
         }
       />
@@ -75,6 +84,7 @@ export default function WalletDetailPage() {
 
   const transactionItems = transactions.data?.transactions ?? [];
   const ledgerItems = ledger.data?.ledgerEntries ?? [];
+  const movementItems = movements.data?.ledgerMovements ?? [];
 
   return (
     <div className="space-y-6">
@@ -214,6 +224,27 @@ export default function WalletDetailPage() {
             Next
           </Link>
         </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">Wallet Movements</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Journal rows touching this wallet, including transfer pair grouping when available.
+            </p>
+          </div>
+          <Link href={`/ledger-movements?walletId=${walletId}`} className="text-sm font-medium text-teal-700">
+            Open full movement journal
+          </Link>
+        </div>
+        {movementItems.length === 0 ? (
+          <p className="mt-6 text-sm text-slate-500">No movement rows returned for this wallet yet.</p>
+        ) : (
+          <div className="mt-6">
+            <LedgerMovementsTable movements={movementItems} />
+          </div>
+        )}
       </Card>
 
       <Card>

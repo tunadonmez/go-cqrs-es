@@ -79,6 +79,7 @@ export type LedgerEntryType = "DEBIT" | "CREDIT";
 
 export interface LedgerEntry {
   id: string;
+  movementId?: string;
   walletId: string;
   aggregateId: string;
   transactionId: string;
@@ -97,6 +98,7 @@ export interface LedgerEntry {
 }
 
 export interface LedgerFilters {
+  movementId?: string;
   walletId?: string;
   entryType?: string;
   eventType?: string;
@@ -108,6 +110,47 @@ export interface LedgerEntryListResponse extends BaseResponse {
   pagination?: PaginationMeta;
   filters?: LedgerFilters;
   ledgerEntries?: LedgerEntry[];
+}
+
+export type LedgerMovementType = "OPENING_BALANCE" | "CREDIT" | "DEBIT" | "TRANSFER";
+export type LedgerMovementStatus = "PENDING" | "COMPLETED" | "INCONSISTENT";
+
+export interface LedgerMovement {
+  id: string;
+  movementType: LedgerMovementType;
+  reference?: string;
+  status: LedgerMovementStatus;
+  currency: string;
+  totalDebit: number;
+  totalCredit: number;
+  entryCount: number;
+  sourceWalletId?: string;
+  destinationWalletId?: string;
+  aggregateId?: string;
+  eventId?: string;
+  eventType?: string;
+  occurredAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LedgerMovementFilters {
+  walletId?: string;
+  movementType?: string;
+  status?: string;
+  reference?: string;
+  occurredFrom?: string;
+  occurredTo?: string;
+}
+
+export interface LedgerMovementListResponse extends BaseResponse {
+  pagination?: PaginationMeta;
+  filters?: LedgerMovementFilters;
+  ledgerMovements?: LedgerMovement[];
+}
+
+export interface LedgerMovementDetailResponse extends BaseResponse {
+  ledgerMovement?: LedgerMovement;
 }
 
 export interface DeadLetterKafkaMeta {

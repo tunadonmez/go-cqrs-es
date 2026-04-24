@@ -41,17 +41,22 @@ type WalletBalanceMismatch struct {
 }
 
 type MovementIssue struct {
-	MovementKey string
-	DebitTotal  float64
-	CreditTotal float64
-	EntryCount  int
-	Currencies  []string
+	MovementID         string
+	StoredStatus       string
+	StoredDebitTotal   float64
+	StoredCreditTotal  float64
+	DerivedDebitTotal  float64
+	DerivedCreditTotal float64
+	StoredEntryCount   int
+	DerivedEntryCount  int
+	Currencies         []string
+	Reason             string
 }
 
 type TransferIssue struct {
-	MovementKey string
-	Reason      string
-	EntryCount  int
+	MovementID string
+	Reason     string
+	EntryCount int
 }
 
 type GlobalLedgerSummary struct {
@@ -73,14 +78,20 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	movements, err := c.repository.FindAllLedgerMovementsForCheck()
+	if err != nil {
+		return nil, err
+	}
 
 	report := &LedgerCheckReport{
 		WalletsChecked:       len(wallets),
+		MovementsChecked:     len(movements),
 		LedgerEntriesChecked: len(entries),
 	}
 
 	balancesByWallet := make(map[string]float64)
 	movementGroups := make(map[string][]*domain.LedgerEntry)
+	missingMovementIDCount := 0
 	for _, entry := range entries {
 		switch entry.EntryType {
 		case domain.LedgerEntryTypeCredit:
@@ -91,12 +102,17 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 			report.GlobalSummary.DebitTotal += entry.Amount
 		}
 
-		if isTransferTransactionType(entry.TransactionType) {
-			movementGroups[movementKey(entry)] = append(movementGroups[movementKey(entry)], entry)
-		}
 		if isExternalMoneyFlowType(entry.TransactionType) {
 			report.GlobalSummary.ExternalMoneyFlowDetected = true
 		}
+		if entry.MovementID == "" {
+			missingMovementIDCount++
+			continue
+		}
+		movementGroups[entry.MovementID] = append(movementGroups[entry.MovementID], entry)
+	}
+	if missingMovementIDCount > 0 {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("%d ledger entrie(s) have no movement_id; run replay to rebuild explicit journal rows", missingMovementIDCount))
 	}
 
 	for _, wallet := range wallets {
@@ -112,15 +128,8 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 		}
 	}
 
-	keys := make([]string, 0, len(movementGroups))
-	for key := range movementGroups {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	report.MovementsChecked = len(keys)
-
-	for _, key := range keys {
-		group := movementGroups[key]
+	for _, movement := range movements {
+		group := movementGroups[movement.ID]
 		var debitTotal, creditTotal float64
 		currencies := map[string]struct{}{}
 		debitCount := 0
@@ -138,21 +147,48 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 			}
 		}
 
-		if math.Abs(debitTotal-creditTotal) > ledgerCheckTolerance || len(currencies) > 1 {
+		if len(group) == 0 {
 			report.MovementIssues = append(report.MovementIssues, MovementIssue{
-				MovementKey: key,
-				DebitTotal:  debitTotal,
-				CreditTotal: creditTotal,
-				EntryCount:  len(group),
-				Currencies:  sortedCurrencyList(currencies),
+				MovementID:        movement.ID,
+				StoredStatus:      movement.Status,
+				StoredDebitTotal:  movement.TotalDebit,
+				StoredCreditTotal: movement.TotalCredit,
+				StoredEntryCount:  movement.EntryCount,
+				DerivedEntryCount: 0,
+				Currencies:        nil,
+				Reason:            "movement row has no linked ledger entries",
 			})
+			continue
+		}
+
+		if math.Abs(movement.TotalDebit-debitTotal) > ledgerCheckTolerance ||
+			math.Abs(movement.TotalCredit-creditTotal) > ledgerCheckTolerance ||
+			movement.EntryCount != len(group) ||
+			len(currencies) > 1 {
+			reportMovementMismatch(movement, debitTotal, creditTotal, len(group), sortedCurrencyList(currencies))
+			report.MovementIssues = append(report.MovementIssues, MovementIssue{
+				MovementID:         movement.ID,
+				StoredStatus:       movement.Status,
+				StoredDebitTotal:   movement.TotalDebit,
+				StoredCreditTotal:  movement.TotalCredit,
+				DerivedDebitTotal:  debitTotal,
+				DerivedCreditTotal: creditTotal,
+				StoredEntryCount:   movement.EntryCount,
+				DerivedEntryCount:  len(group),
+				Currencies:         sortedCurrencyList(currencies),
+				Reason:             "stored movement totals do not match linked ledger entries",
+			})
+		}
+
+		if movement.MovementType != domain.LedgerMovementTypeTransfer {
+			continue
 		}
 
 		if len(group) != 2 || debitCount != 1 || creditCount != 1 {
 			report.TransferIssues = append(report.TransferIssues, TransferIssue{
-				MovementKey: key,
-				Reason:      "expected exactly one debit entry and one credit entry",
-				EntryCount:  len(group),
+				MovementID: movement.ID,
+				Reason:     "expected exactly one debit entry and one credit entry",
+				EntryCount: len(group),
 			})
 			continue
 		}
@@ -161,11 +197,46 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 		second := group[1]
 		if first.CounterpartyWalletID != second.WalletID || second.CounterpartyWalletID != first.WalletID {
 			report.TransferIssues = append(report.TransferIssues, TransferIssue{
-				MovementKey: key,
-				Reason:      "counterparty wallet pairing is inconsistent",
-				EntryCount:  len(group),
+				MovementID: movement.ID,
+				Reason:     "counterparty wallet pairing is inconsistent",
+				EntryCount: len(group),
 			})
 		}
+		if movement.SourceWalletID == "" || movement.DestinationWalletID == "" {
+			report.TransferIssues = append(report.TransferIssues, TransferIssue{
+				MovementID: movement.ID,
+				Reason:     "movement row is missing source or destination wallet metadata",
+				EntryCount: len(group),
+			})
+		}
+	}
+
+	keys := make([]string, 0, len(movementGroups))
+	for key := range movementGroups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		found := false
+		for _, movement := range movements {
+			if movement.ID == key {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		group := movementGroups[key]
+		report.MovementIssues = append(report.MovementIssues, MovementIssue{
+			MovementID:         key,
+			DerivedDebitTotal:  sumEntriesByType(group, domain.LedgerEntryTypeDebit),
+			DerivedCreditTotal: sumEntriesByType(group, domain.LedgerEntryTypeCredit),
+			DerivedEntryCount:  len(group),
+			Currencies:         entryCurrencies(group),
+			Reason:             "ledger entries reference a movement_id that has no ledger_movements row",
+		})
+		reportMovementMismatch(&domain.LedgerMovement{ID: key}, sumEntriesByType(group, domain.LedgerEntryTypeDebit), sumEntriesByType(group, domain.LedgerEntryTypeCredit), len(group), entryCurrencies(group))
 	}
 
 	report.GlobalSummary.Difference = report.GlobalSummary.CreditTotal - report.GlobalSummary.DebitTotal
@@ -176,11 +247,11 @@ func (c *LedgerConsistencyChecker) Run() (*LedgerCheckReport, error) {
 		}
 	} else if math.Abs(report.GlobalSummary.Difference) > ledgerCheckTolerance {
 		report.MovementIssues = append(report.MovementIssues, MovementIssue{
-			MovementKey: "GLOBAL",
-			DebitTotal:  report.GlobalSummary.DebitTotal,
-			CreditTotal: report.GlobalSummary.CreditTotal,
-			EntryCount:  report.LedgerEntriesChecked,
-			Currencies:  nil,
+			MovementID:         "GLOBAL",
+			DerivedDebitTotal:  report.GlobalSummary.DebitTotal,
+			DerivedCreditTotal: report.GlobalSummary.CreditTotal,
+			DerivedEntryCount:  report.LedgerEntriesChecked,
+			Reason:             "global debit/credit totals do not balance",
 		})
 	}
 
@@ -258,12 +329,17 @@ func (r *LedgerCheckReport) String() string {
 	appendSection(&builder, "Movement issues", len(r.MovementIssues) == 0, func() {
 		for _, issue := range r.MovementIssues {
 			builder.WriteString(fmt.Sprintf(
-				"- movement=%s debit=%.2f credit=%.2f entries=%d currencies=%s\n",
-				issue.MovementKey,
-				issue.DebitTotal,
-				issue.CreditTotal,
-				issue.EntryCount,
+				"- movement=%s storedStatus=%s storedDebit=%.2f storedCredit=%.2f derivedDebit=%.2f derivedCredit=%.2f storedEntries=%d derivedEntries=%d currencies=%s reason=%s\n",
+				issue.MovementID,
+				issue.StoredStatus,
+				issue.StoredDebitTotal,
+				issue.StoredCreditTotal,
+				issue.DerivedDebitTotal,
+				issue.DerivedCreditTotal,
+				issue.StoredEntryCount,
+				issue.DerivedEntryCount,
 				strings.Join(issue.Currencies, ","),
+				issue.Reason,
 			))
 		}
 	})
@@ -272,7 +348,7 @@ func (r *LedgerCheckReport) String() string {
 		for _, issue := range r.TransferIssues {
 			builder.WriteString(fmt.Sprintf(
 				"- movement=%s entries=%d reason=%s\n",
-				issue.MovementKey,
+				issue.MovementID,
 				issue.EntryCount,
 				issue.Reason,
 			))
@@ -299,8 +375,18 @@ func appendSection(builder *strings.Builder, title string, empty bool, render fu
 	render()
 }
 
-func movementKey(entry *domain.LedgerEntry) string {
-	return fmt.Sprintf("%s|%s", entry.Reference, entry.OccurredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"))
+func reportMovementMismatch(movement *domain.LedgerMovement, derivedDebit, derivedCredit float64, derivedEntries int, currencies []string) {
+	slog.Error("Ledger movement consistency mismatch",
+		"component", "ledger-checker",
+		"movementId", movement.ID,
+		"storedStatus", movement.Status,
+		"storedDebitTotal", movement.TotalDebit,
+		"storedCreditTotal", movement.TotalCredit,
+		"storedEntryCount", movement.EntryCount,
+		"derivedDebitTotal", derivedDebit,
+		"derivedCreditTotal", derivedCredit,
+		"derivedEntryCount", derivedEntries,
+		"currencies", strings.Join(currencies, ","))
 }
 
 func sortedCurrencyList(values map[string]struct{}) []string {
@@ -310,6 +396,24 @@ func sortedCurrencyList(values map[string]struct{}) []string {
 	}
 	sort.Strings(items)
 	return items
+}
+
+func entryCurrencies(entries []*domain.LedgerEntry) []string {
+	values := make(map[string]struct{})
+	for _, entry := range entries {
+		values[entry.Currency] = struct{}{}
+	}
+	return sortedCurrencyList(values)
+}
+
+func sumEntriesByType(entries []*domain.LedgerEntry, entryType string) float64 {
+	var total float64
+	for _, entry := range entries {
+		if entry.EntryType == entryType {
+			total += entry.Amount
+		}
+	}
+	return total
 }
 
 func isExternalMoneyFlowType(transactionType dto.TransactionType) bool {

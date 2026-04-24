@@ -66,3 +66,26 @@ func (h *WalletQueryHandler) HandleFindLedgerEntries(q queries.FindLedgerEntries
 	}
 	return result, nil
 }
+
+func (h *WalletQueryHandler) HandleFindLedgerMovements(q queries.FindLedgerMovementsQuery) ([]coredomain.BaseEntity, error) {
+	q.Page = queries.NormalizePage(q.Page)
+	q.PageSize = queries.NormalizePageSize(q.PageSize)
+	q.SortBy, q.SortOrder = queries.NormalizeLedgerMovementSort(q.SortBy, q.SortOrder)
+	movements, err := h.repository.FindLedgerMovements(q)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]coredomain.BaseEntity, len(movements))
+	for i, movement := range movements {
+		result[i] = movement
+	}
+	return result, nil
+}
+
+func (h *WalletQueryHandler) HandleFindLedgerMovementByID(q queries.FindLedgerMovementByIDQuery) ([]coredomain.BaseEntity, error) {
+	movement, err := h.repository.FindLedgerMovementByID(q.ID)
+	if err != nil {
+		return nil, err
+	}
+	return []coredomain.BaseEntity{movement}, nil
+}

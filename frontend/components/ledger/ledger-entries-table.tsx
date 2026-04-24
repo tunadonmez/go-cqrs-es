@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatCurrency, formatDateTime, truncateMiddle } from "@/lib/format";
 import { LedgerEntry } from "@/lib/types";
@@ -18,6 +20,7 @@ export function LedgerEntriesTable({
             <th className="pb-3 font-medium">Entry</th>
             <th className="pb-3 font-medium">Amount</th>
             <th className="pb-3 font-medium">Wallet</th>
+            <th className="pb-3 font-medium">Movement</th>
             <th className="pb-3 font-medium">Event</th>
             <th className="pb-3 font-medium">Reference</th>
             <th className="pb-3 font-medium">Counterparty</th>
@@ -34,6 +37,15 @@ export function LedgerEntriesTable({
                 {formatCurrency(entry.amount, entry.currency || fallbackCurrency || "USD")}
               </td>
               <td className="py-4 text-slate-700">{truncateMiddle(entry.walletId)}</td>
+              <td className="py-4 text-slate-500">
+                {entry.movementId ? (
+                  <Link href={`/ledger-movements/${entry.movementId}`} className="text-teal-700 hover:text-teal-900">
+                    {truncateMiddle(entry.movementId)}
+                  </Link>
+                ) : (
+                  "n/a"
+                )}
+              </td>
               <td className="py-4 text-slate-500">{entry.eventType}</td>
               <td className="py-4 text-slate-700">{entry.reference || "n/a"}</td>
               <td className="py-4 text-slate-500">

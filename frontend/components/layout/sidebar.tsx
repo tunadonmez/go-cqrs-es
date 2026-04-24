@@ -8,6 +8,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/wallets", label: "Wallets" },
   { href: "/ledger", label: "Ledger" },
+  { href: "/ledger-movements", label: "Ledger Movements" },
   { href: "/commands", label: "Commands" },
   { href: "/dead-letters", label: "Dead Letters" },
   { href: "/operations", label: "Operations" }

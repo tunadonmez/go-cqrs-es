@@ -81,6 +81,7 @@ func main() {
 		&domain.Wallet{},
 		&domain.Transaction{},
 		&domain.LedgerEntry{},
+		&domain.LedgerMovement{},
 		&infrastructure.ProcessedEvent{},
 		&infrastructure.DeadLetterEvent{},
 		&infrastructure.ProjectionVersion{},
@@ -127,6 +128,12 @@ func main() {
 	})
 	queryDispatcher.RegisterHandler(reflect.TypeOf(queries.FindLedgerEntriesQuery{}), func(q corequeries.BaseQuery) ([]coredomain.BaseEntity, error) {
 		return queryHandler.HandleFindLedgerEntries(q.(queries.FindLedgerEntriesQuery))
+	})
+	queryDispatcher.RegisterHandler(reflect.TypeOf(queries.FindLedgerMovementsQuery{}), func(q corequeries.BaseQuery) ([]coredomain.BaseEntity, error) {
+		return queryHandler.HandleFindLedgerMovements(q.(queries.FindLedgerMovementsQuery))
+	})
+	queryDispatcher.RegisterHandler(reflect.TypeOf(queries.FindLedgerMovementByIDQuery{}), func(q corequeries.BaseQuery) ([]coredomain.BaseEntity, error) {
+		return queryHandler.HandleFindLedgerMovementByID(q.(queries.FindLedgerMovementByIDQuery))
 	})
 
 	// Start Kafka consumers in background

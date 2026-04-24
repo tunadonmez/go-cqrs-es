@@ -5,6 +5,8 @@ import {
   DeadLetterReprocessResponse,
   HealthResponse,
   LedgerEntryListResponse,
+  LedgerMovementDetailResponse,
+  LedgerMovementListResponse,
   MetricsSnapshot,
   TransactionHistoryResponse,
   WalletBalanceResponse,
@@ -75,6 +77,27 @@ export async function getWalletLedgerEntries(
 ) {
   return apiRequest<LedgerEntryListResponse>(
     withQuery(`${appConfig.queryApiUrl}/api/v1/wallets/${walletId}/ledger-entries`, params)
+  );
+}
+
+export async function listLedgerMovements(params: Record<string, string | number | undefined>) {
+  return apiRequest<LedgerMovementListResponse>(
+    withQuery(`${appConfig.queryApiUrl}/api/v1/ledger-movements`, params)
+  );
+}
+
+export async function getWalletLedgerMovements(
+  walletId: string,
+  params: Record<string, string | number | undefined>
+) {
+  return apiRequest<LedgerMovementListResponse>(
+    withQuery(`${appConfig.queryApiUrl}/api/v1/wallets/${walletId}/ledger-movements`, params)
+  );
+}
+
+export async function getLedgerMovement(movementId: string) {
+  return apiRequest<LedgerMovementDetailResponse>(
+    `${appConfig.queryApiUrl}/api/v1/ledger-movements/${movementId}`
   );
 }
 

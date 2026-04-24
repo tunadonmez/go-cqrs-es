@@ -2,64 +2,55 @@
 
 import { useState } from "react";
 
-import { LedgerEntriesTable } from "@/components/ledger/ledger-entries-table";
+import { LedgerMovementsTable } from "@/components/ledger/ledger-movements-table";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/state";
-import { useLedgerEntries } from "@/hooks/use-query-data";
+import { useLedgerMovements } from "@/hooks/use-query-data";
 
-export default function LedgerPage() {
+export default function LedgerMovementsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [sortBy, setSortBy] = useState("occurredAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [movementId, setMovementId] = useState("");
   const [walletId, setWalletId] = useState("");
-  const [entryType, setEntryType] = useState("");
-  const [eventType, setEventType] = useState("");
+  const [movementType, setMovementType] = useState("");
+  const [status, setStatus] = useState("");
+  const [reference, setReference] = useState("");
   const [occurredFrom, setOccurredFrom] = useState("");
   const [occurredTo, setOccurredTo] = useState("");
 
-  const ledger = useLedgerEntries({
+  const movements = useLedgerMovements({
     page,
     pageSize,
     sortBy,
     sortOrder,
-    movementId,
     walletId,
-    entryType,
-    eventType,
+    movementType,
+    status,
+    reference,
     occurredFrom,
     occurredTo
   });
 
-  if (ledger.isLoading) {
-    return <LoadingState label="Loading ledger entries..." />;
+  if (movements.isLoading) {
+    return <LoadingState label="Loading ledger movements..." />;
   }
 
-  if (ledger.error) {
+  if (movements.error) {
     return (
       <ErrorState
-        title="Could not load ledger entries"
-        body={ledger.error instanceof Error ? ledger.error.message : "Unknown ledger query failure."}
+        title="Could not load ledger movements"
+        body={movements.error instanceof Error ? movements.error.message : "Unknown movement query failure."}
       />
     );
   }
 
-  const items = ledger.data?.ledgerEntries ?? [];
+  const items = movements.data?.ledgerMovements ?? [];
 
   return (
     <div className="space-y-6">
       <Card>
         <div className="grid gap-4 lg:grid-cols-4">
-          <input
-            value={movementId}
-            onChange={(event) => {
-              setPage(1);
-              setMovementId(event.target.value);
-            }}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-            placeholder="movementId"
-          />
           <input
             value={walletId}
             onChange={(event) => {
@@ -67,30 +58,47 @@ export default function LedgerPage() {
               setWalletId(event.target.value);
             }}
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-            placeholder="walletId / aggregateId"
+            placeholder="walletId"
           />
           <select
-            value={entryType}
+            value={movementType}
             onChange={(event) => {
               setPage(1);
-              setEntryType(event.target.value);
+              setMovementType(event.target.value);
             }}
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
           >
-            <option value="">All entry types</option>
-            <option value="DEBIT">DEBIT</option>
+            <option value="">All movement types</option>
+            <option value="OPENING_BALANCE">OPENING_BALANCE</option>
             <option value="CREDIT">CREDIT</option>
+            <option value="DEBIT">DEBIT</option>
+            <option value="TRANSFER">TRANSFER</option>
           </select>
-          <input
-            value={eventType}
+          <select
+            value={status}
             onChange={(event) => {
               setPage(1);
-              setEventType(event.target.value);
+              setStatus(event.target.value);
             }}
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-            placeholder="eventType"
+          >
+            <option value="">All statuses</option>
+            <option value="COMPLETED">COMPLETED</option>
+            <option value="PENDING">PENDING</option>
+            <option value="INCONSISTENT">INCONSISTENT</option>
+          </select>
+          <input
+            value={reference}
+            onChange={(event) => {
+              setPage(1);
+              setReference(event.target.value);
+            }}
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+            placeholder="reference"
           />
-          <div className="grid grid-cols-2 gap-4">
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:col-span-2">
             <input
               value={occurredFrom}
               onChange={(event) => {
@@ -110,44 +118,44 @@ export default function LedgerPage() {
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
             />
           </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
           <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <option value="occurredAt">Sort by occurredAt</option>
             <option value="createdAt">Sort by createdAt</option>
           </select>
-          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "asc" | "desc")} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-          </select>
-          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <option value="10">10 rows</option>
-            <option value="20">20 rows</option>
-            <option value="50">50 rows</option>
-          </select>
+          <div className="grid grid-cols-2 gap-4">
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "asc" | "desc")} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="10">10 rows</option>
+              <option value="20">20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
         </div>
       </Card>
 
       {items.length === 0 ? (
         <EmptyState
-          title="No ledger entries for the current filter set"
-          body="Ledger rows are projected from read-side events. A replay may be required after upgrading an existing environment."
+          title="No ledger movements for the current filter set"
+          body="Movement rows are explicit projected journal summaries. Existing environments need a replay to populate them."
         />
       ) : (
         <Card>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-slate-950">Ledger Read Model</h2>
+              <h2 className="text-xl font-semibold text-slate-950">Ledger Movements</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Debit/credit entries projected from wallet events for audit-oriented inspection.
+                First-class journal rows projected alongside ledger entries for audit and operator workflows.
               </p>
             </div>
             <div className="text-sm text-slate-500">
-              Returned: {ledger.data?.pagination?.returnedItems ?? items.length}
+              Returned: {movements.data?.pagination?.returnedItems ?? items.length}
             </div>
           </div>
           <div className="mt-6">
-            <LedgerEntriesTable entries={items} />
+            <LedgerMovementsTable movements={items} />
           </div>
         </Card>
       )}
@@ -159,11 +167,11 @@ export default function LedgerPage() {
         <p className="text-sm text-slate-500">Page {page}</p>
         <button
           onClick={() => {
-            if (ledger.data?.pagination?.hasMore) {
+            if (movements.data?.pagination?.hasMore) {
               setPage((current) => current + 1);
             }
           }}
-          disabled={!ledger.data?.pagination?.hasMore}
+          disabled={!movements.data?.pagination?.hasMore}
           className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
         >
           Next

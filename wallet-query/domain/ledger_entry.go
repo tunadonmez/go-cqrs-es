@@ -15,6 +15,7 @@ const (
 // It is not the source of truth; MongoDB events remain authoritative.
 type LedgerEntry struct {
 	ID                   string              `json:"id" gorm:"primaryKey"`
+	MovementID           string              `json:"movementId,omitempty" gorm:"column:movement_id;index"`
 	WalletID             string              `json:"walletId" gorm:"column:wallet_id;index"`
 	AggregateID          string              `json:"aggregateId" gorm:"column:aggregate_id;index"`
 	TransactionID        string              `json:"transactionId" gorm:"column:transaction_id;index"`

@@ -41,6 +41,7 @@ func (q FindWalletTransactionsQuery) QueryTypeName() string { return "FindWallet
 
 // FindLedgerEntriesQuery returns ledger entries for the full ledger or one wallet.
 type FindLedgerEntriesQuery struct {
+	MovementID   string
 	WalletID     string
 	Page         int
 	PageSize     int
@@ -53,6 +54,29 @@ type FindLedgerEntriesQuery struct {
 }
 
 func (q FindLedgerEntriesQuery) QueryTypeName() string { return "FindLedgerEntriesQuery" }
+
+// FindLedgerMovementsQuery returns movement/journal rows for the full ledger or one wallet.
+type FindLedgerMovementsQuery struct {
+	WalletID     string
+	Page         int
+	PageSize     int
+	SortBy       string
+	SortOrder    string
+	MovementType string
+	Status       string
+	Reference    string
+	OccurredFrom *time.Time
+	OccurredTo   *time.Time
+}
+
+func (q FindLedgerMovementsQuery) QueryTypeName() string { return "FindLedgerMovementsQuery" }
+
+// FindLedgerMovementByIDQuery returns a single movement by ID.
+type FindLedgerMovementByIDQuery struct {
+	ID string
+}
+
+func (q FindLedgerMovementByIDQuery) QueryTypeName() string { return "FindLedgerMovementByIDQuery" }
 
 // FindDeadLettersQuery returns operational dead-letter rows.
 type FindDeadLettersQuery struct {
@@ -118,6 +142,15 @@ func NormalizeDeadLetterSort(sortBy, sortOrder string) (string, string) {
 }
 
 func NormalizeLedgerSort(sortBy, sortOrder string) (string, string) {
+	switch sortBy {
+	case "createdAt", "occurredAt":
+	default:
+		sortBy = "occurredAt"
+	}
+	return sortBy, normalizeSortOrder(sortOrder)
+}
+
+func NormalizeLedgerMovementSort(sortBy, sortOrder string) (string, string) {
 	switch sortBy {
 	case "createdAt", "occurredAt":
 	default:

@@ -134,7 +134,8 @@ func (r *Replayer) dispatch(ev ReplayEvent) error {
 // untouched: replay rebuilds the read model, not the failure history.
 //
 // Scoping:
-//   - Full replay: truncate wallets, transactions, processed_events.
+//   - Full replay: truncate wallets, transactions, ledger_entries,
+//     ledger_movements, processed_events.
 //   - Aggregate-scoped replay: delete only rows belonging to that aggregate.
 func (r *Replayer) resetReadModel(aggregateID string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
@@ -143,7 +144,7 @@ func (r *Replayer) resetReadModel(aggregateID string) error {
 			// RESTART IDENTITY / CASCADE are not needed here — no sequences
 			// or FKs are involved.
 			if err := tx.Exec(
-				`TRUNCATE TABLE ledger_entries, transactions, wallets, processed_events`,
+				`TRUNCATE TABLE ledger_movements, ledger_entries, transactions, wallets, processed_events`,
 			).Error; err != nil {
 				return err
 			}
@@ -152,6 +153,10 @@ func (r *Replayer) resetReadModel(aggregateID string) error {
 
 		if err := tx.Where("wallet_id = ?", aggregateID).
 			Delete(&domain.LedgerEntry{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("source_wallet_id = ? OR destination_wallet_id = ?", aggregateID, aggregateID).
+			Delete(&domain.LedgerMovement{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("wallet_id = ?", aggregateID).

@@ -168,12 +168,30 @@ This is intentionally lightweight. It does not auto-run rebuilds or support mult
 
 ### Ledger Read Model
 
-The query side now also projects an audit-oriented `ledger_entries` read model.
+The query side now also projects two audit-oriented ledger read models:
 
 - `wallets` and `transactions` remain intact.
 - `ledger_entries` is an additional read-side accounting view, not a replacement for MongoDB events and not a new source of truth.
+- `ledger_movements` is a first-class projected journal/movement summary built from the same events and linked ledger rows.
 - Each ledger row represents one side of a financial movement: `DEBIT` or `CREDIT`.
+- Each movement row groups one logical financial movement such as `OPENING_BALANCE`, `CREDIT`, `DEBIT`, or `TRANSFER`.
+- `ledger_entries.movement_id` links detail rows back to their projected movement when available.
 - Rows carry event and transaction traceability metadata such as `eventId`, `eventType`, `eventVersion`, `walletId`, `transactionId`, `amount`, `currency`, and `occurredAt`.
+
+Practical movement fields include:
+
+- `movement_id`
+- `movement_type`
+- `reference`
+- `status`
+- `currency`
+- `total_debit`
+- `total_credit`
+- `entry_count`
+- `source_wallet_id`
+- `destination_wallet_id`
+- `event_id`, `event_type`
+- `occurred_at`, `created_at`, `updated_at`
 
 How events map into ledger entries:
 
@@ -181,6 +199,15 @@ How events map into ledger entries:
 - `WalletCreditedEvent` projects one credit ledger entry for that wallet.
 - `WalletDebitedEvent` projects one debit ledger entry for that wallet.
 - Transfers remain modeled as paired wallet events, so the source wallet gets a debit entry and the destination wallet gets a credit entry.
+
+How events map into ledger movements:
+
+- `WalletCreatedEvent` creates an `OPENING_BALANCE` movement when the opening balance is non-zero.
+- `WalletCreditedEvent` creates a single-sided `CREDIT` movement.
+- `WalletDebitedEvent` creates a single-sided `DEBIT` movement.
+- Transfer events project into one shared `TRANSFER` movement, and both ledger rows use the same deterministic `movement_id`.
+
+Transfer grouping is now explicit instead of inferred. The current implementation derives a deterministic transfer movement ID from wallet pair, reference, occurred-at timestamp, amount, and currency. This is much more stable than grouping by timestamp alone, but it still depends on those event fields being consistent across the paired transfer events.
 
 The ledger is built by the same idempotent projection transaction used for wallets and transactions, so replay and duplicate delivery handling remain consistent.
 
@@ -305,7 +332,7 @@ The read model can be rebuilt at any time from the event store, independent of K
 **How to run it.**
 
 ```bash
-# Full rebuild (truncates wallets, transactions, processed_events)
+# Full rebuild (truncates wallets, transactions, ledger_entries, ledger_movements, processed_events)
 cd wallet-query
 POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger port=5432 sslmode=disable TimeZone=UTC" \
 MONGODB_URI="mongodb://root:root@localhost:27017/walletLedger?authSource=admin" \
@@ -323,7 +350,7 @@ Replay also uses the same version-aware decoder as live Kafka consumption and de
 
 After a successful full replay, `wallet-query` updates `projection_versions` to the current code-defined projection version. Aggregate-scoped replay does not update the stored version because it is not a complete rebuild of the read model.
 
-The current ledger enhancement changes projection output, so the projection version was bumped. Existing environments should run a full replay after upgrading so `ledger_entries` is rebuilt and `projection_versions` is updated to the new code version.
+The current ledger movement enhancement changes projection output, so the projection version was bumped. Existing environments should run a full replay after upgrading so `ledger_entries`, `ledger_movements`, and `projection_versions` are rebuilt to the new code version.
 
 ### Ledger API
 
@@ -331,13 +358,28 @@ The query service now exposes minimal ledger inspection endpoints:
 
 - `GET /api/v1/ledger-entries`
 - `GET /api/v1/wallets/:id/ledger-entries`
+- `GET /api/v1/ledger-movements`
+- `GET /api/v1/ledger-movements/:id`
+- `GET /api/v1/wallets/:id/ledger-movements`
 
-Supported query parameters:
+Supported `ledger-entries` query parameters:
 
 - `page`, `pageSize`
+- `movementId`
 - `walletId` or `aggregateId` on the global endpoint
 - `entryType=DEBIT|CREDIT`
 - `eventType`
+- `occurredFrom`, `occurredTo`
+- `sortBy=occurredAt|createdAt`
+- `sortOrder=asc|desc`
+
+Supported `ledger-movements` query parameters:
+
+- `page`, `pageSize`
+- `walletId`
+- `movementType=OPENING_BALANCE|CREDIT|DEBIT|TRANSFER`
+- `status=COMPLETED|PENDING|INCONSISTENT`
+- `reference`
 - `occurredFrom`, `occurredTo`
 - `sortBy=occurredAt|createdAt`
 - `sortOrder=asc|desc`
@@ -355,9 +397,11 @@ go run . --check-ledger
 What it validates:
 
 - wallet stored balances vs balances derived from `ledger_entries`
-- transfer-derived movement groups for debit/credit balance
-- transfer counterpart pairing and amount/currency consistency
+- stored `ledger_movements` totals vs totals derived from linked `ledger_entries`
+- transfer movements for expected debit/credit pairing and source/destination metadata
 - global debit and credit totals, with explicit warnings when external money flows make strict global balance inapplicable
+
+The checker now uses explicit `ledger_movements` instead of inferring movement groups from `reference + occurred_at`.
 
 This checker is not a repair tool. It does not replay, rebuild, mutate ledger rows, mutate wallets, mutate transactions, mark dead letters resolved, or update projection versions. It is intended for operational verification after replay, projection changes, or dead-letter reprocessing.
 

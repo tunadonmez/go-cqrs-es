@@ -4,14 +4,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   getDeadLetter,
+  getLedgerMovement,
   getQueryHealth,
   getQueryMetrics,
   getQueryReady,
   getWallet,
   getWalletBalance,
   getWalletLedgerEntries,
+  getWalletLedgerMovements,
   getWalletTransactions,
   listLedgerEntries,
+  listLedgerMovements,
   listDeadLetters,
   listWallets,
   reprocessDeadLetter
@@ -78,6 +81,32 @@ export function useWalletLedgerEntries(
     queryKey: ["wallet-ledger-entries", walletId, params],
     queryFn: () => getWalletLedgerEntries(walletId, params),
     enabled: Boolean(walletId)
+  });
+}
+
+export function useLedgerMovements(params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ["ledger-movements", params],
+    queryFn: () => listLedgerMovements(params)
+  });
+}
+
+export function useWalletLedgerMovements(
+  walletId: string,
+  params: Record<string, string | number | undefined>
+) {
+  return useQuery({
+    queryKey: ["wallet-ledger-movements", walletId, params],
+    queryFn: () => getWalletLedgerMovements(walletId, params),
+    enabled: Boolean(walletId)
+  });
+}
+
+export function useLedgerMovement(movementId: string) {
+  return useQuery({
+    queryKey: ["ledger-movement", movementId],
+    queryFn: () => getLedgerMovement(movementId),
+    enabled: Boolean(movementId)
   });
 }
 
