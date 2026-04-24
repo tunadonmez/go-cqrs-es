@@ -5,6 +5,11 @@ package events
 var Registry = make(map[string]func() BaseEvent)
 
 // Register adds an event factory to the global registry.
-func Register(name string, factory func() BaseEvent) {
+func Register(name string, currentSchemaVersion int, factory func() BaseEvent) {
 	Registry[name] = factory
+	registrations[name] = &registration{
+		factory:              factory,
+		currentSchemaVersion: normalizeSchemaVersion(currentSchemaVersion),
+		upcasters:            make(map[int]Upcaster),
+	}
 }

@@ -53,6 +53,7 @@ func (a *AggregateRoot) RaiseEvent(self interface{}, event events.BaseEvent) {
 	if event.GetEventID() == "" {
 		event.SetEventID(newEventID())
 	}
+	events.EnsureSchemaVersion(event)
 	a.ApplyChange(self, event, true)
 }
 

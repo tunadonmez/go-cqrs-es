@@ -57,6 +57,9 @@ func (r *DeadLetterReprocessor) Reprocess(ctx context.Context, deadLetterKey str
 	if envelope.EventID == "" {
 		envelope.EventID = record.EventID
 	}
+	if envelope.SchemaVersion == 0 {
+		envelope.SchemaVersion = record.EventSchemaVersion
+	}
 	aggregateID := aggregateIDFromEnvelope(envelope)
 	if aggregateID == "" {
 		aggregateID = record.AggregateID

@@ -13,9 +13,10 @@ import (
 // envelope level so consumers can log and dedupe without unmarshalling the
 // inner event payload.
 type KafkaMessage struct {
-	EventID string          `json:"eventId"`
-	Type    string          `json:"type"`
-	Data    json.RawMessage `json:"data"`
+	EventID       string          `json:"eventId"`
+	SchemaVersion int             `json:"schemaVersion,omitempty"`
+	Type          string          `json:"type"`
+	Data          json.RawMessage `json:"data"`
 }
 
 // WalletEventProducer publishes domain events to Kafka.
@@ -38,14 +39,16 @@ func (p *WalletEventProducer) Close() error {
 }
 
 func (p *WalletEventProducer) Produce(topic string, event corevents.BaseEvent) error {
+	corevents.EnsureSchemaVersion(event)
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 	envelope := KafkaMessage{
-		EventID: event.GetEventID(),
-		Type:    event.EventTypeName(),
-		Data:    data,
+		EventID:       event.GetEventID(),
+		SchemaVersion: event.GetSchemaVersion(),
+		Type:          event.EventTypeName(),
+		Data:          data,
 	}
 	msg, err := json.Marshal(envelope)
 	if err != nil {

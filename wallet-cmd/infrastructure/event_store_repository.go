@@ -41,6 +41,7 @@ type rawEventDoc struct {
 	AggregateIdentifier string        `bson:"aggregateIdentifier"`
 	AggregateType       string        `bson:"aggregateType"`
 	Version             int           `bson:"version"`
+	EventSchemaVersion  int           `bson:"eventSchemaVersion,omitempty"`
 	EventID             string        `bson:"eventId"`
 	EventType           string        `bson:"eventType"`
 	EventData           bson.Raw      `bson:"eventData"`
@@ -60,6 +61,7 @@ type EventModelDoc struct {
 	AggregateIdentifier string
 	AggregateType       string
 	Version             int
+	EventSchemaVersion  int
 	EventID             string
 	EventType           string
 	EventData           corevents.BaseEvent
@@ -166,6 +168,7 @@ type storableEventDoc struct {
 	AggregateIdentifier string      `bson:"aggregateIdentifier"`
 	AggregateType       string      `bson:"aggregateType"`
 	Version             int         `bson:"version"`
+	EventSchemaVersion  int         `bson:"eventSchemaVersion,omitempty"`
 	EventID             string      `bson:"eventId"`
 	EventType           string      `bson:"eventType"`
 	EventData           interface{} `bson:"eventData"`
@@ -184,12 +187,15 @@ func (r *EventStoreRepository) Save(model *EventModelDoc) (*EventModelDoc, error
 	if model.PublishStatus == "" {
 		model.PublishStatus = PublishStatusPending
 	}
+	corevents.EnsureSchemaVersion(model.EventData)
+	model.EventSchemaVersion = model.EventData.GetSchemaVersion()
 
 	doc := storableEventDoc{
 		TimeStamp:           model.TimeStamp,
 		AggregateIdentifier: model.AggregateIdentifier,
 		AggregateType:       model.AggregateType,
 		Version:             model.Version,
+		EventSchemaVersion:  model.EventSchemaVersion,
 		EventID:             model.EventID,
 		EventType:           model.EventType,
 		EventData:           model.EventData,
@@ -267,13 +273,9 @@ func (r *EventStoreRepository) RecordPublishFailure(ctx context.Context, id bson
 }
 
 func hydrateEvent(raw *rawEventDoc) (*EventModelDoc, error) {
-	factory, ok := corevents.Registry[raw.EventType]
-	if !ok {
-		return nil, fmt.Errorf("unknown event type: %s", raw.EventType)
-	}
-	event := factory()
-	if err := bson.Unmarshal(raw.EventData, event); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event %s: %w", raw.EventType, err)
+	event, err := corevents.DecodeBSONEvent(raw.EventType, raw.EventSchemaVersion, raw.EventData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode event %s: %w", raw.EventType, err)
 	}
 	// Ensure the in-memory event carries its EventID even if the subdocument
 	// was persisted before the field was introduced: fall back to the outer
@@ -281,12 +283,16 @@ func hydrateEvent(raw *rawEventDoc) (*EventModelDoc, error) {
 	if event.GetEventID() == "" {
 		event.SetEventID(raw.EventID)
 	}
+	if event.GetAggregateID() == "" {
+		event.SetAggregateID(raw.AggregateIdentifier)
+	}
 	return &EventModelDoc{
 		ID:                  raw.ID,
 		TimeStamp:           raw.TimeStamp,
 		AggregateIdentifier: raw.AggregateIdentifier,
 		AggregateType:       raw.AggregateType,
 		Version:             raw.Version,
+		EventSchemaVersion:  event.GetSchemaVersion(),
 		EventID:             raw.EventID,
 		EventType:           raw.EventType,
 		EventData:           event,

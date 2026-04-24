@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
 	commonevents "github.com/tunadonmez/go-cqrs-es/wallet-common/events"
 )
 
@@ -11,39 +12,28 @@ import (
 // EventID is surfaced on the envelope for observability and also lives
 // inside the serialized event payload itself (via BaseEventData.EventID).
 type EventEnvelope struct {
-	EventID string          `json:"eventId"`
-	Type    string          `json:"type"`
-	Data    json.RawMessage `json:"data"`
+	EventID       string          `json:"eventId"`
+	SchemaVersion int             `json:"schemaVersion,omitempty"`
+	Type          string          `json:"type"`
+	Data          json.RawMessage `json:"data"`
 }
 
 // DispatchEnvelope routes a serialized event envelope through the same
 // projection entrypoints used by live Kafka consumption.
 func DispatchEnvelope(handler *WalletEventHandler, envelope EventEnvelope) error {
-	switch envelope.Type {
-	case "WalletCreatedEvent":
-		var event commonevents.WalletCreatedEvent
-		if err := json.Unmarshal(envelope.Data, &event); err != nil {
-			return fmt.Errorf("%w: unmarshal WalletCreatedEvent: %v", errPermanentConsumerFailure, err)
-		}
-		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
-		return handler.OnWalletCreated(&event)
+	event, err := corevents.DecodeJSONEvent(envelope.Type, envelope.SchemaVersion, envelope.Data)
+	if err != nil {
+		return fmt.Errorf("%w: decode %s: %v", errPermanentConsumerFailure, envelope.Type, err)
+	}
+	fallbackEventID(event, envelope.EventID)
 
-	case "WalletCreditedEvent":
-		var event commonevents.WalletCreditedEvent
-		if err := json.Unmarshal(envelope.Data, &event); err != nil {
-			return fmt.Errorf("%w: unmarshal WalletCreditedEvent: %v", errPermanentConsumerFailure, err)
-		}
-		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
-		return handler.OnWalletCredited(&event)
-
-	case "WalletDebitedEvent":
-		var event commonevents.WalletDebitedEvent
-		if err := json.Unmarshal(envelope.Data, &event); err != nil {
-			return fmt.Errorf("%w: unmarshal WalletDebitedEvent: %v", errPermanentConsumerFailure, err)
-		}
-		fallbackEventID(&event.BaseEventData.EventID, envelope.EventID)
-		return handler.OnWalletDebited(&event)
-
+	switch e := event.(type) {
+	case *commonevents.WalletCreatedEvent:
+		return handler.OnWalletCreated(e)
+	case *commonevents.WalletCreditedEvent:
+		return handler.OnWalletCredited(e)
+	case *commonevents.WalletDebitedEvent:
+		return handler.OnWalletDebited(e)
 	default:
 		return fmt.Errorf("%w: unknown event type %s", errPermanentConsumerFailure, envelope.Type)
 	}
@@ -59,10 +49,25 @@ func aggregateIDFromEnvelope(envelope EventEnvelope) string {
 	return payload.AggregateID
 }
 
+func normalizedEnvelopeSchemaVersion(envelope EventEnvelope) int {
+	if envelope.SchemaVersion > 0 {
+		return envelope.SchemaVersion
+	}
+
+	var payload struct {
+		SchemaVersion int `json:"schemaVersion"`
+	}
+	if err := json.Unmarshal(envelope.Data, &payload); err == nil && payload.SchemaVersion > 0 {
+		return payload.SchemaVersion
+	}
+
+	return corevents.InitialSchemaVersion
+}
+
 // fallbackEventID copies the envelope-level id onto the inner event when the
 // serialized payload did not carry one (older producers).
-func fallbackEventID(target *string, envelopeID string) {
-	if *target == "" {
-		*target = envelopeID
+func fallbackEventID(event corevents.BaseEvent, envelopeID string) {
+	if event.GetEventID() == "" {
+		event.SetEventID(envelopeID)
 	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	corevents.Register("WalletCreditedEvent", func() corevents.BaseEvent { return &WalletCreditedEvent{} })
+	corevents.Register("WalletCreditedEvent", 1, func() corevents.BaseEvent { return &WalletCreditedEvent{} })
 }
 
 type WalletCreditedEvent struct {

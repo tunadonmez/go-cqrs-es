@@ -46,6 +46,17 @@ Kafka
         → COMMIT
 ```
 
+**Version-aware event decode flow:**
+
+```
+MongoDB / Kafka / dead-letter payload
+  → explicit schemaVersion when present
+  → default missing schemaVersion to v1
+  → stepwise upcasters (v1 -> v2 -> ...)
+  → current in-memory event struct
+  → aggregate replay / live projection / replay rebuild / DLQ reprocess
+```
+
 **Query flow:** HTTP → Controller → QueryDispatcher → QueryHandler → PostgreSQL read model → HTTP response
 
 ### Project Structure
@@ -108,6 +119,31 @@ Snapshotting reduces aggregate rehydration cost on the command side.
 - Snapshot creation is threshold-based in the write service. The current implementation writes a fresh snapshot every 50 persisted events for a given aggregate.
 
 This keeps correctness simple: snapshots are only a cache of derived aggregate state, not a second source of truth, and the final aggregate must always match what a full replay would have produced.
+
+### Event Schema Versioning and Upcasters
+
+Domain-event schema versioning is now explicit and separate from aggregate stream versioning.
+
+- `version` still means aggregate/stream version within one aggregate history.
+- `schemaVersion` means the shape of a specific event payload.
+- Current event structs start at `schemaVersion = 1`.
+- Missing `schemaVersion` is treated as `v1` so existing MongoDB rows, Kafka messages, dead-letter payloads, and snapshots continue to work without data resets.
+
+The write side now persists `schemaVersion` in two places:
+
+- inside the event payload (`BaseEventData.SchemaVersion`)
+- alongside the event as outer metadata in MongoDB and Kafka envelopes
+
+This mirrors how `eventId` is already surfaced both inside payloads and in transport/storage metadata. Older records that only have one copy still remain readable because decoding falls back safely.
+
+An upcaster is a small step function that converts one payload version into the next payload version before normal deserialization. The decoder applies them incrementally:
+
+- read payload + source `schemaVersion`
+- default missing version to `1`
+- run registered upcasters one version at a time until the current version is reached
+- deserialize the upcasted payload into the current Go event struct
+
+This keeps stored history immutable. Old events are not rewritten in MongoDB or PostgreSQL just because the current code understands a newer shape.
 
 ### Idempotent Projections (read side)
 
@@ -252,12 +288,26 @@ go run . --replay --aggregate=<wallet-id>
 
 Replay does **not** clear `dead_letter_events`; rebuilds restore the read model, while dead-letter rows remain available for diagnosis.
 
+Replay also uses the same version-aware decoder as live Kafka consumption and dead-letter reprocessing. If an old payload needs upcasting, replay sees the same in-memory event shape the live consumer would see.
+
 Example log output:
 
 ```
 replay: START scope=ALL total_events=12345
 replay: read model reset (scope=ALL)
 replay: progress 500/12345 events
+
+## Adding a New Event Version
+
+When an existing event payload shape must evolve:
+
+1. Do not mutate old stored event documents or dead-letter payloads.
+2. Increase that event type’s current schema version in `wallet-common/events/...` registration.
+3. Register an upcaster for each step, for example `v1 -> v2`, in `cqrs-core/events`.
+4. Keep the current Go event struct as the target shape of deserialization.
+5. Make sure live Kafka handling, replay, dead-letter reprocessing, and aggregate loading all continue to use the shared decoder.
+
+If a future event reaches `v3`, add both required steps. The decoder is intentionally incremental: `v1 -> v2 -> v3`, not one large ad hoc converter.
 ...
 replay: DONE scope=ALL events=12345 duration=4.812s
 ```

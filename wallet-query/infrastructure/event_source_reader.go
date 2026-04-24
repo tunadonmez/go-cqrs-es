@@ -23,6 +23,7 @@ type rawReplayEventDoc struct {
 	TimeStamp           time.Time `bson:"timeStamp"`
 	AggregateIdentifier string    `bson:"aggregateIdentifier"`
 	Version             int       `bson:"version"`
+	EventSchemaVersion  int       `bson:"eventSchemaVersion,omitempty"`
 	EventID             string    `bson:"eventId"`
 	EventType           string    `bson:"eventType"`
 	EventData           bson.Raw  `bson:"eventData"`
@@ -30,11 +31,12 @@ type rawReplayEventDoc struct {
 
 // ReplayEvent is a hydrated event ready to be handed to a projection handler.
 type ReplayEvent struct {
-	AggregateID string
-	Version     int
-	EventID     string
-	EventType   string
-	Event       corevents.BaseEvent
+	AggregateID   string
+	Version       int
+	SchemaVersion int
+	EventID       string
+	EventType     string
+	Event         corevents.BaseEvent
 }
 
 // EventSourceReader is a thin, read-only Mongo accessor used exclusively by
@@ -116,14 +118,9 @@ func (r *EventSourceReader) StreamEvents(
 			return fmt.Errorf("decode event: %w", err)
 		}
 
-		factory, ok := corevents.Registry[raw.EventType]
-		if !ok {
-			return fmt.Errorf("unknown event type %q at aggregate=%s version=%d",
-				raw.EventType, raw.AggregateIdentifier, raw.Version)
-		}
-		event := factory()
-		if err := bson.Unmarshal(raw.EventData, event); err != nil {
-			return fmt.Errorf("unmarshal %s: %w", raw.EventType, err)
+		event, err := corevents.DecodeBSONEvent(raw.EventType, raw.EventSchemaVersion, raw.EventData)
+		if err != nil {
+			return fmt.Errorf("decode %s: %w", raw.EventType, err)
 		}
 		// Fall back to the outer EventID column when the embedded payload
 		// was persisted before the field was introduced — mirrors what the
@@ -131,13 +128,17 @@ func (r *EventSourceReader) StreamEvents(
 		if event.GetEventID() == "" {
 			event.SetEventID(raw.EventID)
 		}
+		if event.GetAggregateID() == "" {
+			event.SetAggregateID(raw.AggregateIdentifier)
+		}
 
 		if err := handle(ReplayEvent{
-			AggregateID: raw.AggregateIdentifier,
-			Version:     raw.Version,
-			EventID:     raw.EventID,
-			EventType:   raw.EventType,
-			Event:       event,
+			AggregateID:   raw.AggregateIdentifier,
+			Version:       raw.Version,
+			SchemaVersion: event.GetSchemaVersion(),
+			EventID:       raw.EventID,
+			EventType:     raw.EventType,
+			Event:         event,
 		}); err != nil {
 			return err
 		}

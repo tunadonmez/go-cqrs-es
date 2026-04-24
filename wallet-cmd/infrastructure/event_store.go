@@ -50,6 +50,7 @@ func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseE
 	for _, event := range evts {
 		version++
 		event.SetVersion(version)
+		corevents.EnsureSchemaVersion(event)
 		if event.GetAggregateID() == "" {
 			event.SetAggregateID(aggregateID)
 		}
@@ -62,6 +63,7 @@ func (s *WalletEventStore) SaveEvents(aggregateID string, evts []corevents.BaseE
 			AggregateIdentifier: aggregateID,
 			AggregateType:       fmt.Sprintf("%T", domain.WalletAggregate{}),
 			Version:             version,
+			EventSchemaVersion:  event.GetSchemaVersion(),
 			EventID:             event.GetEventID(),
 			EventType:           event.EventTypeName(),
 			EventData:           event,

@@ -231,21 +231,22 @@ func (c *WalletEventConsumer) saveDeadLetter(
 ) error {
 	now := time.Now().UTC()
 	record := &DeadLetterEvent{
-		DeadLetterKey:  deadLetterKey(msg),
-		EventID:        msg.envelope.EventID,
-		EventType:      msg.envelope.Type,
-		AggregateID:    aggregateIDFromEnvelope(msg.envelope),
-		Topic:          msg.topic,
-		Partition:      msg.partition,
-		Offset:         msg.offset,
-		ConsumerGroup:  msg.groupID,
-		FailureKind:    failureKind,
-		RetryAttempts:  attempts,
-		LastError:      failure.Error(),
-		Payload:        string(msg.rawPayload),
-		FirstFailedAt:  now,
-		LastFailedAt:   now,
-		DeadLetteredAt: now,
+		DeadLetterKey:      deadLetterKey(msg),
+		EventID:            msg.envelope.EventID,
+		EventType:          msg.envelope.Type,
+		EventSchemaVersion: normalizedEnvelopeSchemaVersion(msg.envelope),
+		AggregateID:        aggregateIDFromEnvelope(msg.envelope),
+		Topic:              msg.topic,
+		Partition:          msg.partition,
+		Offset:             msg.offset,
+		ConsumerGroup:      msg.groupID,
+		FailureKind:        failureKind,
+		RetryAttempts:      attempts,
+		LastError:          failure.Error(),
+		Payload:            string(msg.rawPayload),
+		FirstFailedAt:      now,
+		LastFailedAt:       now,
+		DeadLetteredAt:     now,
 	}
 
 	var lastErr error
