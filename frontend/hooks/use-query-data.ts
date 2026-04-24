@@ -9,7 +9,9 @@ import {
   getQueryReady,
   getWallet,
   getWalletBalance,
+  getWalletLedgerEntries,
   getWalletTransactions,
+  listLedgerEntries,
   listDeadLetters,
   listWallets,
   reprocessDeadLetter
@@ -57,6 +59,24 @@ export function useWalletTransactions(
   return useQuery({
     queryKey: ["wallet-transactions", walletId, params],
     queryFn: () => getWalletTransactions(walletId, params),
+    enabled: Boolean(walletId)
+  });
+}
+
+export function useLedgerEntries(params: Record<string, string | number | undefined>) {
+  return useQuery({
+    queryKey: ["ledger-entries", params],
+    queryFn: () => listLedgerEntries(params)
+  });
+}
+
+export function useWalletLedgerEntries(
+  walletId: string,
+  params: Record<string, string | number | undefined>
+) {
+  return useQuery({
+    queryKey: ["wallet-ledger-entries", walletId, params],
+    queryFn: () => getWalletLedgerEntries(walletId, params),
     enabled: Boolean(walletId)
   });
 }

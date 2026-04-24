@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	corevents "github.com/tunadonmez/go-cqrs-es/cqrs-core/events"
@@ -53,7 +54,31 @@ func (h *WalletEventHandler) OnWalletCreated(event *commonevents.WalletCreatedEv
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
-		return tx.Save(transaction).Error
+		if err := tx.Save(transaction).Error; err != nil {
+			return err
+		}
+
+		entry := &domain.LedgerEntry{
+			ID:              ledgerEntryID(event.GetEventID(), domain.LedgerEntryTypeCredit),
+			WalletID:        event.GetAggregateID(),
+			AggregateID:     event.GetAggregateID(),
+			TransactionID:   transaction.ID,
+			EventID:         event.GetEventID(),
+			EventType:       event.EventTypeName(),
+			EventVersion:    event.GetVersion(),
+			TransactionType: dto.TransactionTypeOpeningBalance,
+			EntryType:       domain.LedgerEntryTypeCredit,
+			Amount:          event.OpeningBalance,
+			Currency:        event.Currency,
+			Reference:       "opening-balance",
+			Description:     "wallet created",
+			OccurredAt:      event.CreatedAt,
+		}
+		if err := h.repository.SaveLedgerEntriesTx(tx, entry); err != nil {
+			return err
+		}
+		logLedgerProjected(event, 1)
+		return nil
 	})
 }
 
@@ -81,7 +106,35 @@ func (h *WalletEventHandler) OnWalletCredited(event *commonevents.WalletCredited
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
-		return tx.Save(transaction).Error
+		if err := tx.Save(transaction).Error; err != nil {
+			return err
+		}
+
+		entry := &domain.LedgerEntry{
+			ID:                   ledgerEntryID(event.GetEventID(), domain.LedgerEntryTypeCredit),
+			WalletID:             event.GetAggregateID(),
+			AggregateID:          event.GetAggregateID(),
+			TransactionID:        transaction.ID,
+			EventID:              event.GetEventID(),
+			EventType:            event.EventTypeName(),
+			EventVersion:         event.GetVersion(),
+			TransactionType:      event.TransactionType,
+			EntryType:            domain.LedgerEntryTypeCredit,
+			Amount:               event.Amount,
+			Currency:             wallet.Currency,
+			CounterpartyWalletID: event.CounterpartyWalletID,
+			Reference:            event.Reference,
+			Description:          event.Description,
+			OccurredAt:           event.OccurredAt,
+		}
+		if err := h.repository.SaveLedgerEntriesTx(tx, entry); err != nil {
+			return err
+		}
+		if err := validateTransferLedgerInvariant(tx, entry); err != nil {
+			return err
+		}
+		logLedgerProjected(event, 1)
+		return nil
 	})
 }
 
@@ -109,7 +162,35 @@ func (h *WalletEventHandler) OnWalletDebited(event *commonevents.WalletDebitedEv
 		if err := tx.Save(wallet).Error; err != nil {
 			return err
 		}
-		return tx.Save(transaction).Error
+		if err := tx.Save(transaction).Error; err != nil {
+			return err
+		}
+
+		entry := &domain.LedgerEntry{
+			ID:                   ledgerEntryID(event.GetEventID(), domain.LedgerEntryTypeDebit),
+			WalletID:             event.GetAggregateID(),
+			AggregateID:          event.GetAggregateID(),
+			TransactionID:        transaction.ID,
+			EventID:              event.GetEventID(),
+			EventType:            event.EventTypeName(),
+			EventVersion:         event.GetVersion(),
+			TransactionType:      event.TransactionType,
+			EntryType:            domain.LedgerEntryTypeDebit,
+			Amount:               event.Amount,
+			Currency:             wallet.Currency,
+			CounterpartyWalletID: event.CounterpartyWalletID,
+			Reference:            event.Reference,
+			Description:          event.Description,
+			OccurredAt:           event.OccurredAt,
+		}
+		if err := h.repository.SaveLedgerEntriesTx(tx, entry); err != nil {
+			return err
+		}
+		if err := validateTransferLedgerInvariant(tx, entry); err != nil {
+			return err
+		}
+		logLedgerProjected(event, 1)
+		return nil
 	})
 }
 
@@ -184,4 +265,78 @@ func findWalletInTx(tx *gorm.DB, id string) (*domain.Wallet, error) {
 
 func transactionID(walletID string, version int) string {
 	return fmt.Sprintf("%s-%d", walletID, version)
+}
+
+func ledgerEntryID(eventID, entryType string) string {
+	return fmt.Sprintf("%s:%s", eventID, strings.ToLower(entryType))
+}
+
+func logLedgerProjected(event corevents.BaseEvent, entries int) {
+	slog.Info("Ledger entries projected",
+		"component", "ledger-projection",
+		"eventId", event.GetEventID(),
+		"eventType", event.EventTypeName(),
+		"aggregateId", event.GetAggregateID(),
+		"version", event.GetVersion(),
+		"entries", entries)
+}
+
+func validateTransferLedgerInvariant(tx *gorm.DB, entry *domain.LedgerEntry) error {
+	if entry == nil || !isTransferTransactionType(entry.TransactionType) {
+		return nil
+	}
+	if entry.CounterpartyWalletID == "" || entry.Reference == "" {
+		slog.Error("Ledger transfer invariant violated",
+			"component", "ledger-projection",
+			"eventId", entry.EventID,
+			"eventType", entry.EventType,
+			"walletId", entry.WalletID,
+			"counterpartyWalletId", entry.CounterpartyWalletID,
+			"reference", entry.Reference,
+			"reason", "missing transfer counterpart metadata")
+		return errors.New("ledger transfer invariant violated")
+	}
+
+	var counterpart domain.LedgerEntry
+	err := tx.Where(
+		"wallet_id = ? AND counterparty_wallet_id = ? AND reference = ? AND entry_type = ? AND occurred_at = ?",
+		entry.CounterpartyWalletID,
+		entry.WalletID,
+		entry.Reference,
+		inverseLedgerEntryType(entry.EntryType),
+		entry.OccurredAt,
+	).First(&counterpart).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if counterpart.Amount != entry.Amount || counterpart.Currency != entry.Currency {
+		slog.Error("Ledger transfer invariant violated",
+			"component", "ledger-projection",
+			"eventId", entry.EventID,
+			"eventType", entry.EventType,
+			"walletId", entry.WalletID,
+			"counterpartyWalletId", entry.CounterpartyWalletID,
+			"reference", entry.Reference,
+			"amount", entry.Amount,
+			"counterpartAmount", counterpart.Amount,
+			"currency", entry.Currency,
+			"counterpartCurrency", counterpart.Currency,
+			"reason", "debit and credit entries are not balanced")
+		return errors.New("ledger transfer invariant violated")
+	}
+	return nil
+}
+
+func isTransferTransactionType(transactionType dto.TransactionType) bool {
+	return transactionType == dto.TransactionTypeTransferIn || transactionType == dto.TransactionTypeTransferOut
+}
+
+func inverseLedgerEntryType(entryType string) string {
+	if entryType == domain.LedgerEntryTypeDebit {
+		return domain.LedgerEntryTypeCredit
+	}
+	return domain.LedgerEntryTypeDebit
 }

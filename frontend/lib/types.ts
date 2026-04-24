@@ -75,6 +75,41 @@ export interface TransactionHistoryResponse extends BaseResponse {
   transactions?: Transaction[];
 }
 
+export type LedgerEntryType = "DEBIT" | "CREDIT";
+
+export interface LedgerEntry {
+  id: string;
+  walletId: string;
+  aggregateId: string;
+  transactionId: string;
+  eventId: string;
+  eventType: string;
+  eventVersion: number;
+  transactionType: TransactionType;
+  entryType: LedgerEntryType;
+  amount: number;
+  currency: string;
+  counterpartyWalletId?: string;
+  reference?: string;
+  description?: string;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface LedgerFilters {
+  walletId?: string;
+  entryType?: string;
+  eventType?: string;
+  occurredFrom?: string;
+  occurredTo?: string;
+}
+
+export interface LedgerEntryListResponse extends BaseResponse {
+  pagination?: PaginationMeta;
+  filters?: LedgerFilters;
+  ledgerEntries?: LedgerEntry[];
+}
+
 export interface DeadLetterKafkaMeta {
   topic: string;
   partition: number;

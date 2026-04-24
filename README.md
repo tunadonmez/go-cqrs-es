@@ -166,6 +166,24 @@ The query side now tracks which version of projection logic produced the current
 
 This is intentionally lightweight. It does not auto-run rebuilds or support multiple projection generations in parallel. Its job is to make projection drift visible instead of letting read-model behavior change silently.
 
+### Ledger Read Model
+
+The query side now also projects an audit-oriented `ledger_entries` read model.
+
+- `wallets` and `transactions` remain intact.
+- `ledger_entries` is an additional read-side accounting view, not a replacement for MongoDB events and not a new source of truth.
+- Each ledger row represents one side of a financial movement: `DEBIT` or `CREDIT`.
+- Rows carry event and transaction traceability metadata such as `eventId`, `eventType`, `eventVersion`, `walletId`, `transactionId`, `amount`, `currency`, and `occurredAt`.
+
+How events map into ledger entries:
+
+- `WalletCreatedEvent` projects one credit ledger entry for the wallet opening balance.
+- `WalletCreditedEvent` projects one credit ledger entry for that wallet.
+- `WalletDebitedEvent` projects one debit ledger entry for that wallet.
+- Transfers remain modeled as paired wallet events, so the source wallet gets a debit entry and the destination wallet gets a credit entry.
+
+The ledger is built by the same idempotent projection transaction used for wallets and transactions, so replay and duplicate delivery handling remain consistent.
+
 ### Retry / Dead-Letter Handling (read side)
 
 The live Kafka consumer now uses an explicit fetch/process/commit flow instead of relying on implicit offset handling.
@@ -304,6 +322,25 @@ Replay does **not** clear `dead_letter_events`; rebuilds restore the read model,
 Replay also uses the same version-aware decoder as live Kafka consumption and dead-letter reprocessing. If an old payload needs upcasting, replay sees the same in-memory event shape the live consumer would see.
 
 After a successful full replay, `wallet-query` updates `projection_versions` to the current code-defined projection version. Aggregate-scoped replay does not update the stored version because it is not a complete rebuild of the read model.
+
+The current ledger enhancement changes projection output, so the projection version was bumped. Existing environments should run a full replay after upgrading so `ledger_entries` is rebuilt and `projection_versions` is updated to the new code version.
+
+### Ledger API
+
+The query service now exposes minimal ledger inspection endpoints:
+
+- `GET /api/v1/ledger-entries`
+- `GET /api/v1/wallets/:id/ledger-entries`
+
+Supported query parameters:
+
+- `page`, `pageSize`
+- `walletId` or `aggregateId` on the global endpoint
+- `entryType=DEBIT|CREDIT`
+- `eventType`
+- `occurredFrom`, `occurredTo`
+- `sortBy=occurredAt|createdAt`
+- `sortOrder=asc|desc`
 
 Example log output:
 

@@ -84,6 +84,7 @@ func RegisterRoutes(
 	r.GET("/wallets/:id", getWalletByID(dispatcher))
 	r.GET("/wallets/:id/balance", getWalletBalance(dispatcher))
 	r.GET("/wallets/:id/transactions", getWalletTransactions(dispatcher))
+	registerLedgerRoutes(r, dispatcher)
 	registerDeadLetterRoutes(r, deadLetters, deadLetterReprocessor)
 }
 

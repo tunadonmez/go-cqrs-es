@@ -39,6 +39,21 @@ type FindWalletTransactionsQuery struct {
 
 func (q FindWalletTransactionsQuery) QueryTypeName() string { return "FindWalletTransactionsQuery" }
 
+// FindLedgerEntriesQuery returns ledger entries for the full ledger or one wallet.
+type FindLedgerEntriesQuery struct {
+	WalletID     string
+	Page         int
+	PageSize     int
+	SortBy       string
+	SortOrder    string
+	EntryType    string
+	EventType    string
+	OccurredFrom *time.Time
+	OccurredTo   *time.Time
+}
+
+func (q FindLedgerEntriesQuery) QueryTypeName() string { return "FindLedgerEntriesQuery" }
+
 // FindDeadLettersQuery returns operational dead-letter rows.
 type FindDeadLettersQuery struct {
 	Page        int
@@ -98,6 +113,15 @@ func NormalizeDeadLetterSort(sortBy, sortOrder string) (string, string) {
 	case "updatedAt", "createdAt":
 	default:
 		sortBy = "createdAt"
+	}
+	return sortBy, normalizeSortOrder(sortOrder)
+}
+
+func NormalizeLedgerSort(sortBy, sortOrder string) (string, string) {
+	switch sortBy {
+	case "createdAt", "occurredAt":
+	default:
+		sortBy = "occurredAt"
 	}
 	return sortBy, normalizeSortOrder(sortOrder)
 }

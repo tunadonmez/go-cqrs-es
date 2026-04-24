@@ -4,6 +4,7 @@ import {
   DeadLetterListResponse,
   DeadLetterReprocessResponse,
   HealthResponse,
+  LedgerEntryListResponse,
   MetricsSnapshot,
   TransactionHistoryResponse,
   WalletBalanceResponse,
@@ -59,6 +60,21 @@ export async function getWalletTransactions(
 export async function listDeadLetters(params: Record<string, string | number | undefined>) {
   return apiRequest<DeadLetterListResponse>(
     withQuery(`${appConfig.queryApiUrl}/api/v1/dead-letters`, params)
+  );
+}
+
+export async function listLedgerEntries(params: Record<string, string | number | undefined>) {
+  return apiRequest<LedgerEntryListResponse>(
+    withQuery(`${appConfig.queryApiUrl}/api/v1/ledger-entries`, params)
+  );
+}
+
+export async function getWalletLedgerEntries(
+  walletId: string,
+  params: Record<string, string | number | undefined>
+) {
+  return apiRequest<LedgerEntryListResponse>(
+    withQuery(`${appConfig.queryApiUrl}/api/v1/wallets/${walletId}/ledger-entries`, params)
   );
 }
 

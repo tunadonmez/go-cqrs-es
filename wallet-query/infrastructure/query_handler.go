@@ -51,3 +51,18 @@ func (h *WalletQueryHandler) HandleFindTransactions(q queries.FindWalletTransact
 	}
 	return result, nil
 }
+
+func (h *WalletQueryHandler) HandleFindLedgerEntries(q queries.FindLedgerEntriesQuery) ([]coredomain.BaseEntity, error) {
+	q.Page = queries.NormalizePage(q.Page)
+	q.PageSize = queries.NormalizePageSize(q.PageSize)
+	q.SortBy, q.SortOrder = queries.NormalizeLedgerSort(q.SortBy, q.SortOrder)
+	entries, err := h.repository.FindLedgerEntries(q)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]coredomain.BaseEntity, len(entries))
+	for i, entry := range entries {
+		result[i] = entry
+	}
+	return result, nil
+}

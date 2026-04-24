@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { LedgerEntriesTable } from "@/components/ledger/ledger-entries-table";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { WalletSummary } from "@/components/wallets/wallet-summary";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/state";
-import { useWallet, useWalletBalance, useWalletTransactions } from "@/hooks/use-query-data";
+import { useWallet, useWalletBalance, useWalletLedgerEntries, useWalletTransactions } from "@/hooks/use-query-data";
 
 export default function WalletDetailPage() {
   const params = useParams<{ id: string }>();
@@ -34,12 +35,18 @@ export default function WalletDetailPage() {
     occurredFrom,
     occurredTo
   });
+  const ledger = useWalletLedgerEntries(walletId, {
+    page: 1,
+    pageSize: 10,
+    sortBy: "occurredAt",
+    sortOrder: "desc"
+  });
 
-  if (wallet.isLoading || transactions.isLoading) {
+  if (wallet.isLoading || transactions.isLoading || ledger.isLoading) {
     return <LoadingState label="Loading wallet detail..." />;
   }
 
-  if (wallet.error || transactions.error) {
+  if (wallet.error || transactions.error || ledger.error) {
     return (
       <ErrorState
         title="Could not load wallet detail"
@@ -48,6 +55,8 @@ export default function WalletDetailPage() {
             ? wallet.error.message
             : transactions.error instanceof Error
               ? transactions.error.message
+              : ledger.error instanceof Error
+                ? ledger.error.message
               : "Unknown wallet detail failure."
         }
       />
@@ -65,6 +74,7 @@ export default function WalletDetailPage() {
   }
 
   const transactionItems = transactions.data?.transactions ?? [];
+  const ledgerItems = ledger.data?.ledgerEntries ?? [];
 
   return (
     <div className="space-y-6">
@@ -204,6 +214,27 @@ export default function WalletDetailPage() {
             Next
           </Link>
         </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">Wallet Ledger</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Debit/credit entries for this wallet only. This is a read-side accounting view.
+            </p>
+          </div>
+          <Link href={`/ledger?walletId=${walletId}`} className="text-sm font-medium text-teal-700">
+            Open full ledger
+          </Link>
+        </div>
+        {ledgerItems.length === 0 ? (
+          <p className="mt-6 text-sm text-slate-500">No ledger entries returned for this wallet yet.</p>
+        ) : (
+          <div className="mt-6">
+            <LedgerEntriesTable entries={ledgerItems} fallbackCurrency={walletData.currency} />
+          </div>
+        )}
       </Card>
     </div>
   );

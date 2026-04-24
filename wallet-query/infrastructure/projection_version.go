@@ -16,7 +16,7 @@ type ProjectionDefinition struct {
 var DefinedProjectionVersions = []ProjectionDefinition{
 	{
 		Name:    "wallet_projection",
-		Version: 1,
+		Version: 2,
 	},
 }
 

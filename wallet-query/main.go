@@ -62,6 +62,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&domain.Wallet{},
 		&domain.Transaction{},
+		&domain.LedgerEntry{},
 		&infrastructure.ProcessedEvent{},
 		&infrastructure.DeadLetterEvent{},
 		&infrastructure.ProjectionVersion{},
@@ -106,6 +107,9 @@ func main() {
 	})
 	queryDispatcher.RegisterHandler(reflect.TypeOf(queries.FindWalletTransactionsQuery{}), func(q corequeries.BaseQuery) ([]coredomain.BaseEntity, error) {
 		return queryHandler.HandleFindTransactions(q.(queries.FindWalletTransactionsQuery))
+	})
+	queryDispatcher.RegisterHandler(reflect.TypeOf(queries.FindLedgerEntriesQuery{}), func(q corequeries.BaseQuery) ([]coredomain.BaseEntity, error) {
+		return queryHandler.HandleFindLedgerEntries(q.(queries.FindLedgerEntriesQuery))
 	})
 
 	// Start Kafka consumers in background

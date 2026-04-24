@@ -143,13 +143,17 @@ func (r *Replayer) resetReadModel(aggregateID string) error {
 			// RESTART IDENTITY / CASCADE are not needed here — no sequences
 			// or FKs are involved.
 			if err := tx.Exec(
-				`TRUNCATE TABLE transactions, wallets, processed_events`,
+				`TRUNCATE TABLE ledger_entries, transactions, wallets, processed_events`,
 			).Error; err != nil {
 				return err
 			}
 			return nil
 		}
 
+		if err := tx.Where("wallet_id = ?", aggregateID).
+			Delete(&domain.LedgerEntry{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("wallet_id = ?", aggregateID).
 			Delete(&domain.Transaction{}).Error; err != nil {
 			return err
