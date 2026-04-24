@@ -127,7 +127,8 @@ Dead-lettered messages are stored in PostgreSQL in `dead_letter_events`. Each ro
 - `retry_attempts`
 - `last_error`
 - the original Kafka payload
-- failure timestamps
+- `status` (`pending` or `resolved`)
+- failure / resolution timestamps
 
 Example inspection query:
 
@@ -138,6 +139,32 @@ FROM dead_letter_events
 ORDER BY dead_lettered_at DESC
 LIMIT 20;
 ```
+
+#### Reprocessing failed events
+
+Dead-letter reprocessing is a one-shot CLI mode on `wallet-query`. It loads a single row from `dead_letter_events`, decodes the stored Kafka payload back into the original `{eventId, type, data}` envelope, and sends it through the same envelope dispatch and `WalletEventHandler.On...` projection methods used by live Kafka consumption.
+
+That means the same idempotency rules still apply:
+
+- if the event was already projected, `applyIdempotent` skips it safely
+- if the underlying data problem is fixed, the projection succeeds and the dead-letter row is marked `resolved`
+- if it still fails, the row stays `pending`, `retry_attempts` is incremented, and `last_error` is updated
+
+Run it like this:
+
+```bash
+cd wallet-query
+POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger port=5432 sslmode=disable TimeZone=UTC" \
+go run . --reprocess-dead-letter=<dead-letter-key>
+```
+
+Example:
+
+```bash
+go run . --reprocess-dead-letter=2b4d4a2c-9cb5-4b9c-a386-4c0c92c26a53
+```
+
+Reprocessing is manual by design. It does not create a scheduler, does not consume from Kafka, and does not modify replay behavior.
 
 ### Read-Model Rebuild / Replay
 
@@ -227,6 +254,7 @@ The snapshot includes the original counters plus a few extra operational counter
 - `projection_attempts`, `processed_events`, `skipped_events`, `failed_events`
 - `replay_runs`, `replay_failures`, `replay_events_processed`
 - `dead_lettered_events`, `dead_letter_save_failures`
+- `dead_letter_reprocess_runs`, `dead_letter_reprocessed`, `dead_letter_reprocess_failures`
 - `snapshots_loaded`, `snapshots_created`, `snapshot_full_replays`
 
 ### Replay Observability

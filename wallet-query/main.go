@@ -33,10 +33,16 @@ func main() {
 
 	// CLI flags
 	var (
-		replayFlag    = flag.Bool("replay", false, "rebuild the read model from the event store, then exit")
-		aggregateFlag = flag.String("aggregate", "", "when used with --replay, restrict the rebuild to a single aggregate id")
+		replayFlag              = flag.Bool("replay", false, "rebuild the read model from the event store, then exit")
+		aggregateFlag           = flag.String("aggregate", "", "when used with --replay, restrict the rebuild to a single aggregate id")
+		reprocessDeadLetterFlag = flag.String("reprocess-dead-letter", "", "reprocess a single dead-letter row by dead_letter_key, then exit")
 	)
 	flag.Parse()
+
+	if *replayFlag && *reprocessDeadLetterFlag != "" {
+		slog.Error("flags --replay and --reprocess-dead-letter are mutually exclusive")
+		os.Exit(1)
+	}
 
 	cfg := config.Load()
 
@@ -67,6 +73,10 @@ func main() {
 
 	if *replayFlag {
 		runReplay(cfg, db, eventHandler, *aggregateFlag)
+		return
+	}
+	if *reprocessDeadLetterFlag != "" {
+		runDeadLetterReprocess(deadLetters, eventHandler, *reprocessDeadLetterFlag)
 		return
 	}
 
@@ -144,6 +154,15 @@ func runReplay(cfg config.Config, db *gorm.DB, handler *infrastructure.WalletEve
 	replayer := infrastructure.NewReplayer(reader, handler, db)
 	if err := replayer.Run(ctx, infrastructure.ReplayOptions{AggregateID: aggregateID}); err != nil {
 		slog.Error("replay failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func runDeadLetterReprocess(deadLetters *infrastructure.DeadLetterRepository, handler *infrastructure.WalletEventHandler, deadLetterKey string) {
+	ctx := context.Background()
+	reprocessor := infrastructure.NewDeadLetterReprocessor(deadLetters, handler)
+	if err := reprocessor.Reprocess(ctx, deadLetterKey); err != nil {
+		slog.Error("dead-letter reprocess failed", "deadLetterKey", deadLetterKey, "error", err)
 		os.Exit(1)
 	}
 }
