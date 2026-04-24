@@ -53,6 +53,7 @@ Kafka
 ```
 go-cqrs-es/
 ├── cqrs-core/      Core CQRS/ES framework (interfaces, dispatchers, aggregate root)
+├── frontend/       Next.js admin console for command/query operations
 ├── wallet-common/  Shared wallet events and DTOs
 ├── wallet-cmd/     Write service — MongoDB + OutboxPublisher → Kafka
 └── wallet-query/   Read service — PostgreSQL + idempotent Kafka consumer
@@ -68,6 +69,22 @@ go-cqrs-es/
 | Messaging   | Apache Kafka (KRaft) | Event distribution                       |
 | HTTP        | Gin                  | REST API routing                         |
 | Observability| log/slog, Health, Metrics | Structured logging, health checks, simple metrics |
+
+### Frontend Admin Console
+
+The repository now also contains a separate frontend app under `./frontend`. It is a technical admin/demo console for operating the CQRS and event-sourcing workflow, not a consumer wallet UI.
+
+Frontend stack:
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- TanStack Query
+
+The frontend keeps command-side and query-side API access separate:
+
+- `wallet-cmd` for write operations
+- `wallet-query` for read-model inspection, metrics, health, dead-letter inspection, and dead-letter reprocessing
 
 ## Reliability Improvements
 
@@ -329,7 +346,34 @@ POSTGRES_DSN="host=localhost user=postgres password=postgres dbname=walletLedger
 KAFKA_BOOTSTRAP_SERVERS="localhost:9092" \
 KAFKA_GROUP_ID="walletConsumer" \
 go run .
+
+# Frontend admin console
+cd ../frontend
+cp .env.local.example .env.local
+# Then set the command and query API URLs if your ports differ
+npm install
+npm run dev
 ```
+
+The frontend uses:
+
+- `NEXT_PUBLIC_COMMAND_API_URL` for command-side endpoints
+- `NEXT_PUBLIC_QUERY_API_URL` for query-side endpoints
+
+Example `frontend/.env.local`:
+
+```bash
+NEXT_PUBLIC_COMMAND_API_URL=http://localhost:5000
+NEXT_PUBLIC_QUERY_API_URL=http://localhost:5001
+```
+
+The first UI iteration includes:
+
+- dashboard for health, readiness, metrics, and CQRS flow explanation
+- wallet list and wallet detail screens backed by `wallet-query`
+- command forms for create/credit/debit/transfer backed by `wallet-cmd`
+- dead-letter inspection and HTTP reprocess backed by `wallet-query`
+- operations page documenting replay and DLQ workflows
 
 ### Run with Docker
 
