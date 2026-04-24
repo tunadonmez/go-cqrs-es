@@ -140,6 +140,37 @@ ORDER BY dead_lettered_at DESC
 LIMIT 20;
 ```
 
+The query service also exposes a small operational inspection API:
+
+- `GET /api/v1/dead-letters`
+- `GET /api/v1/dead-letters/:deadLetterKey`
+- `POST /api/v1/dead-letters/:deadLetterKey/reprocess`
+
+The list endpoint supports simple operational filters and pagination:
+
+- `page`, `pageSize`
+- `status`
+- `eventType`
+- `aggregateId`
+- `failureKind`
+- `sortBy=createdAt|updatedAt`
+- `sortOrder=asc|desc`
+
+Examples:
+
+```bash
+# List unresolved dead letters, newest first
+curl "http://localhost:5001/api/v1/dead-letters?status=pending&sortBy=createdAt&sortOrder=desc"
+
+# Filter by event type and aggregate
+curl "http://localhost:5001/api/v1/dead-letters?eventType=WalletCreditedEvent&aggregateId=<wallet-id>"
+
+# Fetch one dead-letter row by dead_letter_key
+curl "http://localhost:5001/api/v1/dead-letters/<dead-letter-key>"
+```
+
+`sortBy=createdAt` maps to the persisted `dead_lettered_at` timestamp. `sortBy=updatedAt` sorts by the most recent persisted lifecycle timestamp on the row (`resolved_at`, `reprocessed_at`, `last_failed_at`, then `dead_lettered_at`).
+
 #### Reprocessing failed events
 
 Dead-letter reprocessing is a one-shot CLI mode on `wallet-query`. It loads a single row from `dead_letter_events`, decodes the stored Kafka payload back into the original `{eventId, type, data}` envelope, and sends it through the same envelope dispatch and `WalletEventHandler.On...` projection methods used by live Kafka consumption.
@@ -164,7 +195,15 @@ Example:
 go run . --reprocess-dead-letter=2b4d4a2c-9cb5-4b9c-a386-4c0c92c26a53
 ```
 
-Reprocessing is manual by design. It does not create a scheduler, does not consume from Kafka, and does not modify replay behavior.
+The same workflow is also available over HTTP for a single dead-letter row:
+
+```bash
+curl -X POST "http://localhost:5001/api/v1/dead-letters/<dead-letter-key>/reprocess"
+```
+
+On success, the row is returned with `status=resolved`. If the event still cannot be projected, the API returns a failure response and the same row remains `pending` with updated `retry_attempts`, `last_error`, and `reprocessed_at`.
+
+Reprocessing remains manual by design. It does not create a scheduler, does not consume from Kafka, and does not modify replay behavior.
 
 ### Read-Model Rebuild / Replay
 

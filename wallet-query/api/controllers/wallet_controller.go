@@ -12,6 +12,7 @@ import (
 	"github.com/tunadonmez/go-cqrs-es/wallet-common/dto"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/api/queries"
 	"github.com/tunadonmez/go-cqrs-es/wallet-query/domain"
+	"github.com/tunadonmez/go-cqrs-es/wallet-query/infrastructure"
 )
 
 type WalletListResponse struct {
@@ -73,11 +74,17 @@ type walletTransactionsParams struct {
 }
 
 // RegisterRoutes wires wallet query handlers onto the given router group.
-func RegisterRoutes(r *gin.RouterGroup, dispatcher *coreinfra.QueryDispatcher) {
+func RegisterRoutes(
+	r *gin.RouterGroup,
+	dispatcher *coreinfra.QueryDispatcher,
+	deadLetters *infrastructure.DeadLetterRepository,
+	deadLetterReprocessor *infrastructure.DeadLetterReprocessor,
+) {
 	r.GET("/wallets", getAllWallets(dispatcher))
 	r.GET("/wallets/:id", getWalletByID(dispatcher))
 	r.GET("/wallets/:id/balance", getWalletBalance(dispatcher))
 	r.GET("/wallets/:id/transactions", getWalletTransactions(dispatcher))
+	registerDeadLetterRoutes(r, deadLetters, deadLetterReprocessor)
 }
 
 func getAllWallets(dispatcher *coreinfra.QueryDispatcher) gin.HandlerFunc {

@@ -39,6 +39,18 @@ type FindWalletTransactionsQuery struct {
 
 func (q FindWalletTransactionsQuery) QueryTypeName() string { return "FindWalletTransactionsQuery" }
 
+// FindDeadLettersQuery returns operational dead-letter rows.
+type FindDeadLettersQuery struct {
+	Page        int
+	PageSize    int
+	SortBy      string
+	SortOrder   string
+	Status      string
+	EventType   string
+	AggregateID string
+	FailureKind string
+}
+
 const (
 	DefaultPage     = 1
 	DefaultPageSize = 20
@@ -77,6 +89,15 @@ func NormalizeTransactionSort(sortBy, sortOrder string) (string, string) {
 	case "amount", "eventVersion", "occurredAt":
 	default:
 		sortBy = "occurredAt"
+	}
+	return sortBy, normalizeSortOrder(sortOrder)
+}
+
+func NormalizeDeadLetterSort(sortBy, sortOrder string) (string, string) {
+	switch sortBy {
+	case "updatedAt", "createdAt":
+	default:
+		sortBy = "createdAt"
 	}
 	return sortBy, normalizeSortOrder(sortOrder)
 }

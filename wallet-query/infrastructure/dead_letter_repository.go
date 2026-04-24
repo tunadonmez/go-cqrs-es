@@ -1,8 +1,10 @@
 package infrastructure
 
 import (
+	"strings"
 	"time"
 
+	"github.com/tunadonmez/go-cqrs-es/wallet-query/api/queries"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -21,6 +23,34 @@ func (r *DeadLetterRepository) FindByKey(deadLetterKey string) (*DeadLetterEvent
 		return nil, err
 	}
 	return &record, nil
+}
+
+func (r *DeadLetterRepository) FindAll(q queries.FindDeadLettersQuery) ([]*DeadLetterEvent, error) {
+	var records []*DeadLetterEvent
+	db := r.db.Model(&DeadLetterEvent{})
+	if q.Status != "" {
+		db = db.Where("status = ?", strings.ToLower(q.Status))
+	}
+	if q.EventType != "" {
+		db = db.Where("event_type = ?", q.EventType)
+	}
+	if q.AggregateID != "" {
+		db = db.Where("aggregate_id = ?", q.AggregateID)
+	}
+	if q.FailureKind != "" {
+		db = db.Where("failure_kind = ?", q.FailureKind)
+	}
+
+	offset := (q.Page - 1) * q.PageSize
+	orderBy := deadLetterSortColumn(q.SortBy) + " " + q.SortOrder
+	if err := db.Order(orderBy).
+		Order("dead_letter_key " + q.SortOrder).
+		Limit(q.PageSize + 1).
+		Offset(offset).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 func (r *DeadLetterRepository) Save(record *DeadLetterEvent) error {
@@ -82,4 +112,13 @@ func (r *DeadLetterRepository) MarkFailedReprocess(deadLetterKey string, failure
 			"reprocessed_at": at,
 			"resolved_at":    nil,
 		}).Error
+}
+
+func deadLetterSortColumn(sortBy string) string {
+	switch sortBy {
+	case "updatedAt":
+		return "COALESCE(resolved_at, reprocessed_at, last_failed_at, dead_lettered_at)"
+	default:
+		return "dead_lettered_at"
+	}
 }

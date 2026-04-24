@@ -70,13 +70,14 @@ func main() {
 	repo := infrastructure.NewWalletRepository(db)
 	eventHandler := infrastructure.NewWalletEventHandler(repo)
 	deadLetters := infrastructure.NewDeadLetterRepository(db)
+	deadLetterReprocessor := infrastructure.NewDeadLetterReprocessor(deadLetters, eventHandler)
 
 	if *replayFlag {
 		runReplay(cfg, db, eventHandler, *aggregateFlag)
 		return
 	}
 	if *reprocessDeadLetterFlag != "" {
-		runDeadLetterReprocess(deadLetters, eventHandler, *reprocessDeadLetterFlag)
+		runDeadLetterReprocess(deadLetterReprocessor, *reprocessDeadLetterFlag)
 		return
 	}
 
@@ -125,7 +126,7 @@ func main() {
 	})
 
 	v1 := r.Group("/api/v1")
-	controllers.RegisterRoutes(v1, queryDispatcher)
+	controllers.RegisterRoutes(v1, queryDispatcher, deadLetters, deadLetterReprocessor)
 
 	slog.Info("Query service starting", "port", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
@@ -158,9 +159,8 @@ func runReplay(cfg config.Config, db *gorm.DB, handler *infrastructure.WalletEve
 	}
 }
 
-func runDeadLetterReprocess(deadLetters *infrastructure.DeadLetterRepository, handler *infrastructure.WalletEventHandler, deadLetterKey string) {
+func runDeadLetterReprocess(reprocessor *infrastructure.DeadLetterReprocessor, deadLetterKey string) {
 	ctx := context.Background()
-	reprocessor := infrastructure.NewDeadLetterReprocessor(deadLetters, handler)
 	if err := reprocessor.Reprocess(ctx, deadLetterKey); err != nil {
 		slog.Error("dead-letter reprocess failed", "deadLetterKey", deadLetterKey, "error", err)
 		os.Exit(1)
